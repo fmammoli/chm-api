@@ -1,0 +1,18 @@
+.git
+.gitignore
+.venv
+.venv/
+__pycache__/
+*.py[cod]
+*.ipynb
+*.log
+.env
+.env.*
+!.env.example
+.pytest_cache/
+.mypy_cache/
+.vscode/
+.idea/
+Dockerfile*
+docker-compose*.yml
+Mekar Raya GIS Data/

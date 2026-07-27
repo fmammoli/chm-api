@@ -1,0 +1,41 @@
+services:
+  chm-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: chm-api:latest
+    container_name: chm-api
+    env_file:
+      - .env
+    environment:
+      API_KEY: ${API_KEY:-replace-with-strong-random-secret}
+      REQUIRE_API_KEY: ${REQUIRE_API_KEY:-true}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-["localhost","127.0.0.1"]}
+      MAX_GEOJSON_BYTES: ${MAX_GEOJSON_BYTES:-1000000}
+      MAX_AOI_AREA_KM2: ${MAX_AOI_AREA_KM2:-250000}
+      MAX_VERTICES: ${MAX_VERTICES:-50000}
+      MAX_TILES_PER_REQUEST: ${MAX_TILES_PER_REQUEST:-128}
+      DOWNLOAD_WORKERS: ${DOWNLOAD_WORKERS:-6}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-30}
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: chm-api-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - chm-api
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chm-api"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "boto3>=1.38.23",
+    "fastapi[standard]>=0.140.0",
+    "geopandas>=1.1.3",
+    "numpy>=2.2.6",
+    "pydantic-settings>=2.11.0",
+    "rasterio>=1.5.0",
+    "shapely>=2.1.1",
+]
+
+[tool.fastapi]
+entrypoint = "app.main:app"
