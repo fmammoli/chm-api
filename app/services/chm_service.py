@@ -114,9 +114,9 @@ def _validate_square_size(geom: BaseGeometry, side_km: float) -> None:
 
     # Keep tolerance practical for frontend-generated polygons and projection effects.
     tolerance_km = max(0.5, side_km * 0.15)
-    if abs(width_km - side_km) > tolerance_km or abs(height_km - side_km) > tolerance_km:
+    if width_km > side_km + tolerance_km or height_km > side_km + tolerance_km:
         raise ServiceValidationError(
-            f"AOI square side must be {side_km:.1f} km (+/- {tolerance_km:.1f} km)"
+            f"AOI square side must be at most {side_km:.1f} km (+/- {tolerance_km:.1f} km tolerance)"
         )
 
     square_delta_km = abs(width_km - height_km)
