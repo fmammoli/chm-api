@@ -23,7 +23,7 @@ from rasterio.io import DatasetReader, MemoryFile
 from rasterio.merge import merge
 from rasterio.shutil import copy as rio_copy
 from rasterio.warp import calculate_default_transform, reproject
-from shapely.geometry import box, mapping, shape
+from shapely.geometry import mapping, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform as shapely_transform
 from shapely.strtree import STRtree
@@ -102,18 +102,26 @@ def _count_vertices(geom) -> int:
     return 0
 
 
-def _build_centroid_square_aoi(geom: BaseGeometry, side_km: float) -> BaseGeometry:
+def _validate_square_size(geom: BaseGeometry, side_km: float) -> None:
     if side_km <= 0:
         raise ServiceValidationError("AOI square side must be positive")
 
-    half_side_m = (side_km * 1000.0) / 2.0
-    to_3857 = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
-    to_4326 = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
+    # Validate in meters to avoid degree-based distortion in EPSG:4326.
+    geom_3857 = _transform_geometry_to_crs(geom, "EPSG:3857")
+    minx, miny, maxx, maxy = geom_3857.bounds
+    width_km = (maxx - minx) / 1000.0
+    height_km = (maxy - miny) / 1000.0
 
-    centroid_3857 = shapely_transform(to_3857.transform, geom.centroid)
-    cx, cy = centroid_3857.x, centroid_3857.y
-    square_3857 = box(cx - half_side_m, cy - half_side_m, cx + half_side_m, cy + half_side_m)
-    return shapely_transform(to_4326.transform, square_3857)
+    # Keep tolerance practical for frontend-generated polygons and projection effects.
+    tolerance_km = max(0.5, side_km * 0.15)
+    if abs(width_km - side_km) > tolerance_km or abs(height_km - side_km) > tolerance_km:
+        raise ServiceValidationError(
+            f"AOI square side must be {side_km:.1f} km (+/- {tolerance_km:.1f} km)"
+        )
+
+    square_delta_km = abs(width_km - height_km)
+    if square_delta_km > max(0.5, side_km * 0.1):
+        raise ServiceValidationError("AOI must be a square")
 
 
 def _transform_geometry_to_crs(geom: BaseGeometry, dst_crs) -> BaseGeometry:
@@ -368,12 +376,11 @@ def build_cropped_ctrees_agb_raster(
     if payload_len > settings.max_geojson_bytes:
         raise ServiceValidationError("GeoJSON payload too large")
 
-    input_geom = _extract_geometry(geojson_obj)
-    _validate_geometry(input_geom, settings)
-    geom = _build_centroid_square_aoi(input_geom, side_km=settings.aoi_square_side_km)
+    geom = _extract_geometry(geojson_obj)
     _validate_geometry(geom, settings)
+    _validate_square_size(geom, side_km=settings.aoi_square_side_km)
 
-    logger.info("📐 Using centroid-based AOI square with side=%.1f km", settings.aoi_square_side_km)
+    logger.info("📐 Using provided AOI square with side target=%.1f km", settings.aoi_square_side_km)
 
     remote_cog_url = _ctrees_agb_remote_cog_url(settings, year=year, variable=variable)
     logger.info("📍 Cropping CTrees AGB COG: %s", remote_cog_url)
@@ -479,12 +486,11 @@ def build_cropped_raster(geojson_obj: dict, settings: Settings, workdir: Path) -
     if payload_len > settings.max_geojson_bytes:
         raise ServiceValidationError("GeoJSON payload too large")
 
-    input_geom = _extract_geometry(geojson_obj)
-    _validate_geometry(input_geom, settings)
-    geom = _build_centroid_square_aoi(input_geom, side_km=settings.aoi_square_side_km)
+    geom = _extract_geometry(geojson_obj)
     _validate_geometry(geom, settings)
+    _validate_square_size(geom, side_km=settings.aoi_square_side_km)
 
-    logger.info("📐 Using centroid-based AOI square with side=%.1f km", settings.aoi_square_side_km)
+    logger.info("📐 Using provided AOI square with side target=%.1f km", settings.aoi_square_side_km)
 
     tree, _, tiles, tiles_crs = _load_tiles_spatial_index(settings)
     geom_tiles_crs = _transform_geometry_to_crs(geom, tiles_crs)

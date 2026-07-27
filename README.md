@@ -42,7 +42,7 @@ uv run fastapi dev app/main.py
 
 - `POST /api/v1/chm/crop`
 - Header: `X-API-Key: <your key>`
-- AOI behavior: input polygon is converted to a 20 km x 20 km square centered at the GeoJSON centroid.
+- AOI behavior: input AOI is used as-is and must comply with the configured square size (default 20 km x 20 km).
 - Body:
 
 ```json
@@ -75,7 +75,7 @@ Response:
 
 - `POST /api/v1/ctrees/agb/crop`
 - Header: `X-API-Key: <your key>`
-- AOI behavior: input polygon is converted to a 20 km x 20 km square centered at the GeoJSON centroid.
+- AOI behavior: input AOI is used as-is and must comply with the configured square size (default 20 km x 20 km).
 - Body:
 
 ```json
@@ -114,7 +114,7 @@ Response:
 - API key authentication.
 - In-memory per-IP rate limit.
 - Input validation: geometry type, geometry validity, bounds, payload size, AOI size, vertex count, tile count.
-- AOI rule: input polygon is converted to a centroid-based square with configurable side length (default `20`).
+- AOI rule: input polygon is not rewritten; API validates it matches the configured square side length (default `20`).
 - To change the default footprint for all deployments, edit the default in [app/config.py](app/config.py) and push the change.
 - Temporary files are cleaned after response.
 - Tile index metadata is cached in memory with TTL.
