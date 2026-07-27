@@ -24,7 +24,7 @@ def require_api_key(request: Request, x_api_key: str | None = Header(default=Non
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Server API key is not configured. Set API_KEY or CANOPY_API_KEY and restart FastAPI.",
+            detail="Server API key is not configured. Set CHM_API_KEY, API_KEY, or CANOPY_API_KEY and restart FastAPI.",
         )
     if provided_key != configured_key:
         logger.warning("api_key_mismatch method=%s path=%s", request.method, request.url.path)

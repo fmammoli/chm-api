@@ -24,7 +24,7 @@ cp .env.example .env
 
 3. Set a strong API key in `.env`.
 
-	You can use either `API_KEY` or `CANOPY_API_KEY` for the FastAPI server key.
+	You can use `CHM_API_KEY`, `API_KEY`, or `CANOPY_API_KEY` for the FastAPI server key.
 
 4. Start API:
 

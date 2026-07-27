@@ -17,10 +17,8 @@ write_files:
       set -euo pipefail
 
       APP_DIR="/opt/chm-api"
-      REPO_URL="https://github.com/your-username/your-repo.git"
+      REPO_URL="https://github.com/fmammoli/chm-api.git"
       BRANCH="main"
-      DOMAIN="api.example.com"
-      EMAIL="you@example.com"
 
       sudo apt-get update
       sudo apt-get install -y ca-certificates curl gnupg git ufw
@@ -40,7 +38,6 @@ write_files:
 
       sudo ufw allow OpenSSH
       sudo ufw allow 80/tcp
-      sudo ufw allow 443/tcp
       sudo ufw --force enable
 
       sudo mkdir -p "$APP_DIR"
@@ -54,10 +51,10 @@ write_files:
       fi
 
       cat > .env <<EOF
-      API_KEY=replace-with-strong-random-secret
+      CHM_API_KEY=${CHM_API_KEY:-${API_KEY:-replace-with-strong-random-secret}}
       REQUIRE_API_KEY=true
-      CORS_ORIGINS=["https://your-frontend.example.com"]
-      TRUSTED_HOSTS=["localhost","127.0.0.1","$DOMAIN"]
+      CORS_ORIGINS=["https://beyond-carbon-webgis.vercel.app","http://localhost:3000"]
+      TRUSTED_HOSTS=["localhost","127.0.0.1","beyond-carbon-webgis.vercel.app"]
       MAX_GEOJSON_BYTES=1000000
       MAX_AOI_AREA_KM2=250000
       MAX_VERTICES=50000
@@ -66,13 +63,10 @@ write_files:
       RATE_LIMIT_PER_MINUTE=30
       EOF
 
-      sudo sed -i "s/api.example.com/$DOMAIN/g" Caddyfile
-      sudo sed -i "s/you@example.com/$EMAIL/g" Caddyfile
-
       sudo docker compose up -d --build
 
       echo "Deployment complete"
-      echo "Check https://$DOMAIN/health"
+      echo "Check http://$(curl -s ifconfig.me)/health"
   - path: /etc/caddy/Caddyfile
     permissions: '0644'
     content: |

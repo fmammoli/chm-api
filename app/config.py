@@ -12,10 +12,10 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
 
     # Security
-    api_key: str = Field(default="", validation_alias=AliasChoices("API_KEY", "CANOPY_API_KEY"))
+    api_key: str = Field(default="", validation_alias=AliasChoices("CHM_API_KEY", "API_KEY", "CANOPY_API_KEY"))
     require_api_key: bool = True
     cors_origins: list[str] = ["http://localhost:3000"]
-    trusted_hosts: list[str] = ["localhost", "127.0.0.1"]
+    trusted_hosts: list[str] = ["localhost", "127.0.0.1", "178.104.153.106", "chm-api.local"]
 
     # Data source
     s3_bucket: str = "dataforgood-fb-data"
@@ -27,13 +27,13 @@ class Settings(BaseSettings):
 
     # Operational limits
     max_geojson_bytes: int = 1_000_000
-    max_aoi_area_km2: float = 250_000.0
+    max_aoi_area_km2: float = 1_000.0
     max_vertices: int = 50_000
-    max_tiles_per_request: int = 128
+    max_tiles_per_request: int = 8
     tile_index_ttl_seconds: int = 86_400
-    download_workers: int = 6
+    download_workers: int = 2
     rate_limit_per_minute: int = 30
-    aoi_square_side_km: float = Field(default=20.0, gt=0, description="Centroid AOI square side length in kilometers")
+    aoi_square_side_km: float = Field(default=5.0, gt=0, description="Centroid AOI square side length in kilometers")
 
     # Local country boundary file used for exact Indonesia-only validation.
     indonesia_boundary_path: Path = Path("app/data/indonesia.geojson")

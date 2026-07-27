@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CHM Logs Viewer</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { font-family: Inter, system-ui, sans-serif; margin: 0; background: #111827; color: #f9fafb; }
+      main { max-width: 980px; margin: 0 auto; padding: 2rem 1.25rem 3rem; }
+      .card { background: #1f2937; border: 1px solid #374151; border-radius: 12px; padding: 1rem 1.25rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); }
+      form { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+      input, button { font: inherit; padding: 0.7rem 0.9rem; border-radius: 8px; border: 1px solid #4b5563; }
+      input { min-width: 240px; background: #111827; color: #f9fafb; }
+      button { background: #2563eb; color: white; cursor: pointer; border: none; }
+      button:hover { background: #1d4ed8; }
+      pre { white-space: pre-wrap; word-break: break-word; background: #030712; padding: 1rem; border-radius: 10px; min-height: 240px; max-height: 60vh; overflow: auto; }
+      .hint { color: #9ca3af; margin-top: 0.4rem; font-size: 0.95rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="card">
+        <h1>Follow logs</h1>
+        <p class="hint">Enter an API key if the server requires one and connect to the live NDJSON stream.</p>
+        <form id="connect-form">
+          <input id="api-key" name="apiKey" type="password" placeholder="API key (optional)" />
+          <input id="tail" name="tail" type="number" min="1" value="100" />
+          <button type="submit">Connect</button>
+        </form>
+        <pre id="output">Waiting for connection…</pre>
+      </div>
+    </main>
+    <script>
+      const form = document.getElementById('connect-form');
+      const output = document.getElementById('output');
+      const apiKeyInput = document.getElementById('api-key');
+      const tailInput = document.getElementById('tail');
+      let currentStream = null;
+
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        if (currentStream) {
+          currentStream.close();
+        }
+        output.textContent = 'Connecting…';
+        const tail = tailInput.value || '100';
+        const url = new URL('/api/v1/logs', window.location.origin);
+        url.searchParams.set('tail', tail);
+        const headers = {};
+        const apiKey = apiKeyInput.value.trim();
+        if (apiKey) {
+          headers['X-API-Key'] = apiKey;
+        }
+
+        fetch(url, { headers })
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`Request failed with ${response.status}`);
+            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            const pump = () => reader.read().then(({ done, value }) => {
+              if (done) {
+                output.textContent += '\nStream closed.';
+                return;
+              }
+              const chunk = decoder.decode(value, { stream: true });
+              output.textContent += chunk;
+              output.scrollTop = output.scrollHeight;
+              return pump();
+            });
+            currentStream = { close: () => reader.cancel() };
+            return pump();
+          })
+          .catch((error) => {
+            output.textContent = `Connection error: ${error.message}`;
+          });
+      });
+    </script>
+  </body>
+</html>
