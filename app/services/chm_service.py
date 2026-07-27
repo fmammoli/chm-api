@@ -3,6 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import logging
+import math
 import os
 import tempfile
 import time
@@ -10,7 +11,7 @@ from threading import Lock
 from dataclasses import dataclass
 from pathlib import Path
 import shutil
-from typing import cast
+from typing import Callable, cast
 
 import geopandas as gpd
 import numpy as np
@@ -112,16 +113,63 @@ def _validate_square_size(geom: BaseGeometry, side_km: float) -> None:
     width_km = (maxx - minx) / 1000.0
     height_km = (maxy - miny) / 1000.0
 
-    # Keep tolerance practical for frontend-generated polygons and projection effects.
-    tolerance_km = max(0.5, side_km * 0.15)
-    if width_km > side_km + tolerance_km or height_km > side_km + tolerance_km:
+    if width_km > side_km or height_km > side_km:
+        actual_side_km = max(width_km, height_km)
         raise ServiceValidationError(
-            f"AOI square side must be at most {side_km:.1f} km (+/- {tolerance_km:.1f} km tolerance)"
+            (
+                f"AOI square side is {actual_side_km:.2f} km "
+                f"(width={width_km:.2f} km, height={height_km:.2f} km). "
+                f"Maximum allowed is {side_km:.1f} km."
+            )
         )
 
     square_delta_km = abs(width_km - height_km)
     if square_delta_km > max(0.5, side_km * 0.1):
         raise ServiceValidationError("AOI must be a square")
+
+
+def validate_chm_request_payload(geojson_obj: dict, settings: Settings) -> None:
+    try:
+        payload_len = len(json.dumps(geojson_obj).encode("utf-8"))
+    except (TypeError, ValueError) as exc:
+        raise ServiceValidationError("Invalid JSON payload") from exc
+
+    if payload_len > settings.max_geojson_bytes:
+        raise ServiceValidationError("GeoJSON payload too large")
+
+    if not isinstance(geojson_obj, dict):
+        raise ServiceValidationError("geojson must be an object")
+
+    if geojson_obj.get("type") != "FeatureCollection":
+        raise ServiceValidationError("geojson.type must be FeatureCollection")
+
+    geom = _extract_geometry(geojson_obj)
+    _validate_geometry(geom, settings)
+    _validate_square_size(geom, side_km=settings.aoi_square_side_km)
+
+
+def _assert_output_extent_matches_aoi(
+    geom: BaseGeometry,
+    output_crs,
+    output_bounds: tuple[float, float, float, float],
+    pixel_size_x: float,
+    pixel_size_y: float,
+) -> None:
+    aoi_out_crs = _transform_geometry_to_crs(geom, output_crs)
+    aminx, aminy, amaxx, amaxy = aoi_out_crs.bounds
+    ominx, ominy, omaxx, omaxy = output_bounds
+
+    tolerance_m = max(abs(pixel_size_x), abs(pixel_size_y), 1.0) * 2.0
+    if (
+        ominx > aminx + tolerance_m
+        or ominy > aminy + tolerance_m
+        or omaxx < amaxx - tolerance_m
+        or omaxy < amaxy - tolerance_m
+    ):
+        raise ServiceValidationError(
+            "Generated raster extent does not fully cover requested AOI. "
+            f"aoi_bounds={aoi_out_crs.bounds}, output_bounds={output_bounds}, tolerance_m={tolerance_m:.3f}"
+        )
 
 
 def _transform_geometry_to_crs(geom: BaseGeometry, dst_crs) -> BaseGeometry:
@@ -296,6 +344,18 @@ def _compute_band_stats(data: np.ndarray, nodata: float) -> tuple[float, float] 
     return float(valid.min()), float(valid.max())
 
 
+def _coverage_stats(data: np.ndarray, nodata: float) -> tuple[int, int, float]:
+    if np.issubdtype(data.dtype, np.floating):
+        valid_mask = np.isfinite(data) & ~np.isclose(data, nodata)
+    else:
+        valid_mask = data != nodata
+
+    total = int(data.size)
+    valid = int(np.count_nonzero(valid_mask))
+    fraction = (valid / total) if total else 0.0
+    return valid, total, fraction
+
+
 def _export_cog(
     data: np.ndarray,
     transform,
@@ -368,17 +428,8 @@ def build_cropped_ctrees_agb_raster(
     workdir: Path,
 ) -> CropResult:
     t_start = time.perf_counter()
-    try:
-        payload_len = len(json.dumps(geojson_obj).encode("utf-8"))
-    except (TypeError, ValueError) as exc:
-        raise ServiceValidationError("Invalid JSON payload") from exc
-
-    if payload_len > settings.max_geojson_bytes:
-        raise ServiceValidationError("GeoJSON payload too large")
-
+    validate_chm_request_payload(geojson_obj, settings)
     geom = _extract_geometry(geojson_obj)
-    _validate_geometry(geom, settings)
-    _validate_square_size(geom, side_km=settings.aoi_square_side_km)
 
     logger.info("📐 Using provided AOI square with side target=%.1f km", settings.aoi_square_side_km)
 
@@ -427,8 +478,8 @@ def build_cropped_ctrees_agb_raster(
         )
         if dst_width is None or dst_height is None:
             raise ServiceValidationError("Failed to compute target raster shape for EPSG:3857")
-        dst_width = int(dst_width)
-        dst_height = int(dst_height)
+        dst_width = max(1, math.ceil(float(dst_width)))
+        dst_height = max(1, math.ceil(float(dst_height)))
         reprojected = np.full((image.shape[0], dst_height, dst_width), nodata, dtype=np.dtype(target_dtype))
 
         for band_idx in range(image.shape[0]):
@@ -457,8 +508,15 @@ def build_cropped_ctrees_agb_raster(
     )
 
     with rasterio.open(output_path) as src:
-        bounds = array_bounds(src.height, src.width, src.transform)
+        bounds = (src.bounds.left, src.bounds.bottom, src.bounds.right, src.bounds.top)
         crs = str(src.crs)
+        _assert_output_extent_matches_aoi(
+            geom=geom,
+            output_crs=src.crs,
+            output_bounds=bounds,
+            pixel_size_x=src.transform.a,
+            pixel_size_y=src.transform.e,
+        )
 
     logger.info(
         "✅ CTrees AGB crop completed. variable=%s year=%s size=%s",
@@ -476,20 +534,29 @@ def build_cropped_ctrees_agb_raster(
     return CropResult(output_path=output_path, crs=crs, bounds=bounds)
 
 
-def build_cropped_raster(geojson_obj: dict, settings: Settings, workdir: Path) -> CropResult:
+def build_cropped_raster(
+    geojson_obj: dict,
+    settings: Settings,
+    workdir: Path,
+    progress_callback: Callable[[int, str | None], None] | None = None,
+) -> CropResult:
     t_start = time.perf_counter()
-    try:
-        payload_len = len(json.dumps(geojson_obj).encode("utf-8"))
-    except (TypeError, ValueError) as exc:
-        raise ServiceValidationError("Invalid JSON payload") from exc
 
-    if payload_len > settings.max_geojson_bytes:
-        raise ServiceValidationError("GeoJSON payload too large")
+    def _report_progress(progress: int, message: str | None = None) -> None:
+        if progress_callback is None:
+            return
+        clamped = max(0, min(99, progress))
+        progress_callback(clamped, message)
 
+    validate_chm_request_payload(geojson_obj, settings)
     geom = _extract_geometry(geojson_obj)
-    _validate_geometry(geom, settings)
-    _validate_square_size(geom, side_km=settings.aoi_square_side_km)
 
+    geom_3857 = _transform_geometry_to_crs(geom, "EPSG:3857")
+    logger.info(
+        "📐 AOI bounds epsg4326=(%.6f, %.6f, %.6f, %.6f) epsg3857=(%.2f, %.2f, %.2f, %.2f)",
+        *geom.bounds,
+        *geom_3857.bounds,
+    )
     logger.info("📐 Using provided AOI square with side target=%.1f km", settings.aoi_square_side_km)
 
     tree, _, tiles, tiles_crs = _load_tiles_spatial_index(settings)
@@ -504,6 +571,7 @@ def build_cropped_raster(geojson_obj: dict, settings: Settings, workdir: Path) -
 
     logger.info("🎯 Cropping %d remote COG tiles from S3...", len(tile_names))
     tile_urls = [_get_remote_tile_url(settings, t) for t in tile_names]
+    _report_progress(30, f"Queued {len(tile_urls)} tile crop tasks")
 
     # Crop remote tiles in parallel and keep them as in-memory datasets for deterministic merge.
     cropped_datasets: list[DatasetReader] = []
@@ -538,6 +606,19 @@ def build_cropped_raster(geojson_obj: dict, settings: Settings, workdir: Path) -
                 filled=True,
             )
 
+            valid_pixels, total_pixels, coverage_fraction = _coverage_stats(image[0], tile_nodata)
+            logger.info(
+                "🧩 Tile mask coverage tile=%s size=%dx%d valid=%d/%d (%.2f%%) src_nodata=%s resolved_nodata=%s",
+                tile_url.split("/")[-1],
+                image.shape[2],
+                image.shape[1],
+                valid_pixels,
+                total_pixels,
+                coverage_fraction * 100.0,
+                src.nodata,
+                tile_nodata,
+            )
+
             mem = MemoryFile()
             with mem.open(
                 driver="GTiff",
@@ -561,6 +642,8 @@ def build_cropped_raster(geojson_obj: dict, settings: Settings, workdir: Path) -
             executor.submit(_crop_tile_part, i, tile_url): (i, tile_url)
             for i, tile_url in enumerate(tile_urls)
         }
+        completed_tiles = 0
+        total_tiles = len(future_to_tile)
         for future in as_completed(future_to_tile):
             i, tile_url = future_to_tile[future]
             logger.info("📍 Cropped tile %d/%d: %s", i + 1, len(tile_urls), tile_url.split("/")[-1])
@@ -568,6 +651,9 @@ def build_cropped_raster(geojson_obj: dict, settings: Settings, workdir: Path) -
                 crop_results.append(future.result())
             except Exception as e:
                 logger.warning("⚠️ Failed to crop tile %s: %s", tile_url, str(e))
+            completed_tiles += 1
+            tile_progress = 35 + int((completed_tiles / total_tiles) * 45)
+            _report_progress(tile_progress, f"Processed {completed_tiles}/{total_tiles} tiles")
 
     crop_results.sort(key=lambda item: item[0])
     for _, _, ds, mem, src_crs, src_dtype, tile_nodata in crop_results:
@@ -589,6 +675,7 @@ def build_cropped_raster(geojson_obj: dict, settings: Settings, workdir: Path) -
             raise ServiceValidationError("Failed to resolve raster metadata for export")
 
         t_merge_start = time.perf_counter()
+        _report_progress(82, "Merging cropped tile data")
         if len(cropped_datasets) == 1:
             logger.info("🔀 Single tile crop; skipping merge step")
             only_ds = cropped_datasets[0]
@@ -605,7 +692,18 @@ def build_cropped_raster(geojson_obj: dict, settings: Settings, workdir: Path) -
         t_merge_end = time.perf_counter()
 
         t_export_start = time.perf_counter()
+        _report_progress(90, "Exporting GeoTIFF")
         cropped_path = workdir / "output.tif"
+        valid_pixels, total_pixels, coverage_fraction = _coverage_stats(mosaic[0], nodata)
+        logger.info(
+            "🧪 Output coverage before export size=%dx%d valid=%d/%d (%.2f%%) nodata=%s",
+            mosaic.shape[2],
+            mosaic.shape[1],
+            valid_pixels,
+            total_pixels,
+            coverage_fraction * 100.0,
+            nodata,
+        )
         _export_cog(
             data=mosaic,
             transform=transform,
@@ -616,7 +714,7 @@ def build_cropped_raster(geojson_obj: dict, settings: Settings, workdir: Path) -
         )
 
         with rasterio.open(cropped_path) as src:
-            bounds = array_bounds(src.height, src.width, src.transform)
+            bounds = (src.bounds.left, src.bounds.bottom, src.bounds.right, src.bounds.top)
             logger.info(
                 "🧭 Output metadata: size=%dx%d pixel_size=(%.10f, %.10f) nodata=%s overviews=%s",
                 src.width,
@@ -626,7 +724,15 @@ def build_cropped_raster(geojson_obj: dict, settings: Settings, workdir: Path) -
                 src.nodata,
                 src.overviews(1),
             )
+            _assert_output_extent_matches_aoi(
+                geom=geom,
+                output_crs=src.crs,
+                output_bounds=bounds,
+                pixel_size_x=src.transform.a,
+                pixel_size_y=src.transform.e,
+            )
             crs = str(src.crs)
+        _report_progress(98, "Finalizing output metadata")
         t_export_end = time.perf_counter()
     finally:
         for ds in cropped_datasets:

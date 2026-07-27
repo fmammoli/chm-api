@@ -12,8 +12,10 @@ def test_logs_endpoint_returns_ndjson(monkeypatch):
     monkeypatch.delenv("TRUSTED_HOSTS", raising=False)
     monkeypatch.setenv("REQUIRE_API_KEY", "false")
 
+    import app.config as config_module
     import app.main as main_module
 
+    config_module.get_settings.cache_clear()
     main_module = importlib.reload(main_module)
     client = TestClient(main_module.app, base_url="http://localhost")
 
@@ -35,8 +37,10 @@ def test_logs_ui_page_renders_form(monkeypatch):
     monkeypatch.delenv("TRUSTED_HOSTS", raising=False)
     monkeypatch.setenv("REQUIRE_API_KEY", "false")
 
+    import app.config as config_module
     import app.main as main_module
 
+    config_module.get_settings.cache_clear()
     main_module = importlib.reload(main_module)
     client = TestClient(main_module.app, base_url="http://localhost")
 

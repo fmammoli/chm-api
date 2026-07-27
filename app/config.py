@@ -27,13 +27,17 @@ class Settings(BaseSettings):
 
     # Operational limits
     max_geojson_bytes: int = 1_000_000
-    max_aoi_area_km2: float = 1_000.0
+    max_aoi_area_km2: float = 1_600.0
     max_vertices: int = 50_000
     max_tiles_per_request: int = 8
     tile_index_ttl_seconds: int = 86_400
     download_workers: int = 2
     rate_limit_per_minute: int = 30
     aoi_square_side_km: float = Field(default=60.0, gt=0, description="Maximum AOI square side length in kilometers")
+
+    # Local durable job storage for async CHM extraction.
+    jobs_dir: Path = Path("jobs")
+    outputs_dir: Path = Path("outputs")
 
     # Local country boundary file used for exact Indonesia-only validation.
     indonesia_boundary_path: Path = Path("app/data/indonesia.geojson")

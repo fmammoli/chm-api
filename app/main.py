@@ -15,14 +15,30 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.config import get_settings
-from app.models import CtreesAgbCropRequest, CropRequest, ErrorBody, HealthResponse
+from app.models import (
+    ChmJobCreateRequest,
+    ChmJobCreateResponse,
+    ChmJobStatusResponse,
+    CtreesAgbCropRequest,
+    CropRequest,
+    ErrorBody,
+    HealthResponse,
+)
 from app.security import require_api_key
 from app.services.chm_service import (
     ServiceValidationError,
     build_cropped_ctrees_agb_raster,
-    build_cropped_raster,
     safe_rmtree,
     stream_file_chunks,
+    validate_chm_request_payload,
+)
+from app.services.job_service import (
+    create_job,
+    get_job,
+    get_queue_snapshot,
+    job_output_path,
+    reconcile_incomplete_jobs,
+    run_chm_job,
 )
 
 # Configure logging to output to console
@@ -65,7 +81,17 @@ class InMemoryLogHandler(logging.Handler):
 
 log_handler = InMemoryLogHandler(500)
 log_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
-logger.addHandler(log_handler)
+
+# Always keep in-memory logs for /api/v1/logs and also emit to terminal stdout.
+if not any(isinstance(handler, InMemoryLogHandler) for handler in logger.handlers):
+    logger.addHandler(log_handler)
+
+if not any(getattr(handler, "_chm_console", False) for handler in logger.handlers):
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    setattr(console_handler, "_chm_console", True)
+    logger.addHandler(console_handler)
+
 logger.setLevel(logging.INFO)
 logger.propagate = False
 
@@ -122,6 +148,13 @@ def validation_exception_handler(_: Request, exc: ServiceValidationError):
     return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=ErrorBody(message=str(exc)).model_dump())
 
 
+@app.on_event("startup")
+def reconcile_jobs_on_startup() -> None:
+    reconciled = reconcile_incomplete_jobs(settings)
+    if reconciled > 0:
+        logger.warning("reconciled_interrupted_jobs count=%s", reconciled)
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse()
@@ -162,43 +195,138 @@ async def stream_logs(
     return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
 
-@app.post("/api/v1/chm/crop")
-def crop_chm(
+@app.post("/api/v1/chm/jobs", response_model=ChmJobCreateResponse, status_code=status.HTTP_202_ACCEPTED)
+def create_chm_job(
+    request: Request,
+    payload: ChmJobCreateRequest,
+    background_tasks: BackgroundTasks,
+    _: None = Depends(require_api_key),
+):
+    logger.info(
+        "job_create_request_received path=%s client_ip=%s",
+        request.url.path,
+        request.client.host if request.client else "unknown",
+    )
+    validate_chm_request_payload(payload.geojson, settings)
+    job = create_job(settings)
+    background_tasks.add_task(run_chm_job, settings, job["jobId"], payload.geojson)
+    queue = get_queue_snapshot(settings)
+    logger.info(
+        "job_create_enqueued job_id=%s queue_counts queued=%s running=%s succeeded=%s failed=%s",
+        job["jobId"],
+        queue["queued"],
+        queue["running"],
+        queue["succeeded"],
+        queue["failed"],
+    )
+    return ChmJobCreateResponse(
+        jobId=job["jobId"],
+        status=job["status"],
+        message="CHM extraction job created",
+    )
+
+
+@app.get("/api/v1/chm/jobs/{job_id}", response_model=ChmJobStatusResponse)
+def get_chm_job(
+    request: Request,
+    job_id: str,
+    _: None = Depends(require_api_key),
+):
+    logger.info(
+        "job_status_request_received path=%s job_id=%s client_ip=%s",
+        request.url.path,
+        job_id,
+        request.client.host if request.client else "unknown",
+    )
+    job = get_job(settings, job_id)
+    if job is None:
+        logger.warning("job_status_not_found job_id=%s", job_id)
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=ErrorBody(message="Job not found").model_dump(),
+        )
+    logger.info(
+        "job_status_response job_id=%s status=%s progress=%s",
+        job_id,
+        job.get("status"),
+        job.get("progress"),
+    )
+    return ChmJobStatusResponse.model_validate(job)
+
+
+@app.get("/api/v1/chm/jobs/{job_id}/download")
+def download_chm_job_result(
+    request: Request,
+    job_id: str,
+    _: None = Depends(require_api_key),
+):
+    logger.info(
+        "job_download_request_received path=%s job_id=%s client_ip=%s",
+        request.url.path,
+        job_id,
+        request.client.host if request.client else "unknown",
+    )
+    job = get_job(settings, job_id)
+    if job is None:
+        logger.warning("job_download_not_found job_id=%s", job_id)
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=ErrorBody(message="Job not found").model_dump(),
+        )
+
+    if job.get("status") != "succeeded":
+        logger.info("job_download_blocked job_id=%s status=%s", job_id, job.get("status"))
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content=ErrorBody(message=f"Job is not complete. Current status: {job.get('status')}").model_dump(),
+        )
+
+    output_path = job_output_path(settings, job_id)
+    if not output_path.exists():
+        logger.warning("job_download_missing_output job_id=%s expected_path=%s", job_id, output_path)
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=ErrorBody(message="Job result file not found").model_dump(),
+        )
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="chm_{job_id}.tif"',
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-store",
+    }
+    logger.info("job_download_streaming job_id=%s output_path=%s size_bytes=%s", job_id, output_path, output_path.stat().st_size)
+    return StreamingResponse(stream_file_chunks(output_path), media_type="image/tiff", headers=headers)
+
+
+@app.post("/api/v1/chm/crop", response_model=ChmJobCreateResponse, status_code=status.HTTP_202_ACCEPTED)
+def crop_chm_compat(
+    request: Request,
     payload: CropRequest,
     background_tasks: BackgroundTasks,
     _: None = Depends(require_api_key),
 ):
-    logger.info("🚀 Crop request received. geojson type=%s", type(payload.geojson))
-    workdir = Path(tempfile.mkdtemp(prefix="chm_crop_"))
-    logger.info("📁 Created temporary workdir=%s", workdir)
-    try:
-        logger.info("⏳ Starting raster processing...")
-        result = build_cropped_raster(payload.geojson, settings=settings, workdir=workdir)
-        logger.info("✅ Raster processing completed. output_path=%s crs=%s", result.output_path, result.crs)
-    except ServiceValidationError as e:
-        logger.warning("⚠️ Validation error: %s", str(e))
-        safe_rmtree(workdir)
-        raise
-    except Exception as exc:  # pragma: no cover
-        logger.error("❌ Processing failed: %s", str(exc), exc_info=True)
-        safe_rmtree(workdir)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Raster processing failed") from exc
-
-    headers = {
-        "Content-Type": "image/tiff; application=geotiff",
-        "Content-Disposition": 'inline; filename="canopy_height_output.tif"',
-        "X-Raster-CRS": result.crs,
-        "X-Raster-Bounds": ",".join(str(v) for v in result.bounds),
-        "X-Content-Type-Options": "nosniff",
-        "Cache-Control": "no-store",
-    }
-    background_tasks.add_task(safe_rmtree, workdir)
-    logger.info("📤 Streaming response with %d bytes", result.output_path.stat().st_size)
-
-    return StreamingResponse(
-        stream_file_chunks(result.output_path),
-        media_type="image/tiff",
-        headers=headers,
+    # Legacy endpoint now enqueues a job instead of blocking on synchronous crop.
+    logger.info(
+        "legacy_crop_request_received path=%s client_ip=%s",
+        request.url.path,
+        request.client.host if request.client else "unknown",
+    )
+    validate_chm_request_payload(payload.geojson, settings)
+    job = create_job(settings, message="Legacy crop endpoint accepted; poll job status")
+    background_tasks.add_task(run_chm_job, settings, job["jobId"], payload.geojson)
+    queue = get_queue_snapshot(settings)
+    logger.info(
+        "legacy_crop_redirected_to_job job_id=%s queue_counts queued=%s running=%s succeeded=%s failed=%s",
+        job["jobId"],
+        queue["queued"],
+        queue["running"],
+        queue["succeeded"],
+        queue["failed"],
+    )
+    return ChmJobCreateResponse(
+        jobId=job["jobId"],
+        status=job["status"],
+        message="CHM extraction job created. Use /api/v1/chm/jobs/{jobId} to poll and /download to fetch TIFF.",
     )
 
 

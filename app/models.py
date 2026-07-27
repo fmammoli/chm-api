@@ -1,11 +1,53 @@
+from datetime import datetime
+from enum import Enum
 from typing import Any
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 
+class JobStatus(str, Enum):
+    queued = "queued"
+    running = "running"
+    succeeded = "succeeded"
+    failed = "failed"
+
+
 class CropRequest(BaseModel):
     geojson: dict[str, Any] = Field(description="GeoJSON Feature or FeatureCollection")
+
+
+class ChmJobCreateRequest(BaseModel):
+    geojson: dict[str, Any] = Field(description="GeoJSON FeatureCollection")
+
+
+class ChmJobCreateResponse(BaseModel):
+    jobId: str
+    status: JobStatus
+    message: str
+
+
+class ChmJobResult(BaseModel):
+    downloadUrl: str
+    contentType: str = "image/tiff"
+
+
+class ChmJobError(BaseModel):
+    code: str
+    message: str
+
+
+class ChmJobStatusResponse(BaseModel):
+    jobId: str
+    status: JobStatus
+    createdAt: datetime
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    progress: int | None = None
+    etaSeconds: int | None = None
+    message: str | None = None
+    result: ChmJobResult | None = None
+    error: ChmJobError | None = None
 
 
 class CtreesAgbCropRequest(BaseModel):

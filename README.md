@@ -38,11 +38,11 @@ uv run fastapi dev app/main.py
 
 - `GET /health`
 
-### Crop canopy raster
+### Create CHM extraction job
 
-- `POST /api/v1/chm/crop`
+- `POST /api/v1/chm/jobs`
 - Header: `X-API-Key: <your key>`
-- AOI behavior: input AOI is used as-is and must be a square no larger than the configured maximum side (default 40 km).
+- AOI behavior: input AOI is used as-is and must be a `FeatureCollection` square no larger than the configured maximum side (default 60 km).
 - Body:
 
 ```json
@@ -63,19 +63,59 @@ uv run fastapi dev app/main.py
 }
 ```
 
-Response:
+Response (`202 Accepted`):
 
-- Content type: `image/tiff`
-- Headers include raster metadata:
-	- `X-Raster-CRS`
-	- `X-Raster-Bounds`
-	- `Content-Disposition: inline; filename="canopy_height_output.tif"`
+```json
+{
+	"jobId": "b2e9d1a1-c7c4-44a5-a27c-31b821f6bb85",
+	"status": "queued",
+	"message": "CHM extraction job created"
+}
+```
+
+### Check CHM job status
+
+- `GET /api/v1/chm/jobs/{job_id}`
+- Header: `X-API-Key: <your key>`
+
+Response example:
+
+```json
+{
+	"jobId": "b2e9d1a1-c7c4-44a5-a27c-31b821f6bb85",
+	"status": "succeeded",
+	"createdAt": "2026-07-27T12:33:45.123456Z",
+	"startedAt": "2026-07-27T12:33:45.345678Z",
+	"finishedAt": "2026-07-27T12:34:11.999999Z",
+	"progress": 100,
+	"message": "CHM extraction completed",
+	"result": {
+		"downloadUrl": "/api/v1/chm/jobs/b2e9d1a1-c7c4-44a5-a27c-31b821f6bb85/download",
+		"contentType": "image/tiff"
+	},
+	"error": null
+}
+```
+
+### Download CHM GeoTIFF result
+
+- `GET /api/v1/chm/jobs/{job_id}/download`
+- Header: `X-API-Key: <your key>`
+- Streams `image/tiff` only when job is succeeded.
+- Returns `409` with JSON error when job is not finished.
+- Returns `404` when job or output is missing.
+
+### Legacy crop endpoint compatibility
+
+- `POST /api/v1/chm/crop`
+- Header: `X-API-Key: <your key>`
+- This endpoint now enqueues a CHM job and returns `202` with `jobId` instead of streaming GeoTIFF directly.
 
 ### Crop CTrees AGB raster
 
 - `POST /api/v1/ctrees/agb/crop`
 - Header: `X-API-Key: <your key>`
-- AOI behavior: input AOI is used as-is and must be a square no larger than the configured maximum side (default 40 km).
+- AOI behavior: input AOI is used as-is and must be a square no larger than the configured maximum side (default 60 km).
 - Body:
 
 ```json
@@ -114,10 +154,13 @@ Response:
 - API key authentication.
 - In-memory per-IP rate limit.
 - Input validation: geometry type, geometry validity, bounds, payload size, AOI size, vertex count, tile count.
-- AOI rule: input polygon is not rewritten; API validates it is square and does not exceed the configured maximum side length (default `40`).
+- AOI rule: input polygon is not rewritten; API validates it is square and does not exceed the configured maximum side length (default `60`).
 - To change the default footprint for all deployments, edit the default in [app/config.py](app/config.py) and push the change.
 - Temporary files are cleaned after response.
 - Tile index metadata is cached in memory with TTL.
+- Job metadata and outputs are persisted on disk by default:
+	- `jobs/<job_id>.json`
+	- `outputs/<job_id>.tif`
 
 ## GeoTIFF output guarantees
 
