@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     tile_index_ttl_seconds: int = 86_400
     download_workers: int = 2
     rate_limit_per_minute: int = 30
-    aoi_square_side_km: float = Field(default=5.0, gt=0, description="Centroid AOI square side length in kilometers")
+    aoi_square_side_km: float = Field(default=40.0, gt=0, description="Centroid AOI square side length in kilometers")
 
     # Local country boundary file used for exact Indonesia-only validation.
     indonesia_boundary_path: Path = Path("app/data/indonesia.geojson")

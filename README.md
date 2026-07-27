@@ -114,7 +114,8 @@ Response:
 - API key authentication.
 - In-memory per-IP rate limit.
 - Input validation: geometry type, geometry validity, bounds, payload size, AOI size, vertex count, tile count.
-- AOI rule: input polygon is converted to a centroid-based square with configurable side length (`AOI_SQUARE_SIDE_KM`, default `20`).
+- AOI rule: input polygon is converted to a centroid-based square with configurable side length (default `20`).
+- To change the default footprint for all deployments, edit the default in [app/config.py](app/config.py) and push the change.
 - Temporary files are cleaned after response.
 - Tile index metadata is cached in memory with TTL.
 
@@ -176,6 +177,58 @@ docker compose up --build
 ```
 
 The service will be available at http://localhost:8000/health.
+
+### View logs
+
+To view the API container logs locally:
+
+```bash
+docker compose logs -f chm-api
+```
+
+To follow the recent logs from the server:
+
+```bash
+sudo docker compose logs --tail=100 -f chm-api
+```
+
+You can also inspect the Caddy proxy logs if HTTPS or routing is failing:
+
+```bash
+sudo docker compose logs -f caddy
+```
+
+If you enabled the browser-based log viewer, open it in your browser at:
+
+```text
+http://<your-server-ip>/logs-ui
+```
+
+This route shows the recent application logs in the UI. If you are testing locally, use:
+
+```text
+http://localhost:8000/logs-ui
+```
+
+### Deploy changes
+
+The easiest way to deploy the latest code from this repository to your Hetzner server is:
+
+```bash
+./scripts/update-server.sh
+```
+
+That script connects to the configured server, pulls the latest commit from GitHub, and rebuilds/restarts the Docker containers. The script is defined in [scripts/update-server.sh](scripts/update-server.sh).
+
+If you prefer to deploy manually on the server, run:
+
+```bash
+cd /opt/chm-api
+sudo git pull origin main
+sudo docker compose up -d --build
+```
+
+Keep your runtime secrets in the server's `.env` file and do not overwrite it during deployment.
 
 ### Reverse proxy and HTTPS
 
