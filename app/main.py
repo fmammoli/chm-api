@@ -11,6 +11,7 @@ from threading import BoundedSemaphore, Lock
 from typing import Any
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -194,6 +195,11 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
 @app.middleware("http")
 async def basic_rate_limit(request: Request, call_next):
     # Lightweight in-memory rate limiter. Replace with Redis-backed limiter for multi-instance deployments.
+    # Only throttle mutating requests so async job polling endpoints (GET/HEAD/OPTIONS)
+    # do not trip 429 while a previously accepted job is still processing.
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        return await call_next(request)
+
     client_ip = request.client.host if request.client else "unknown"
     now = time.monotonic()
     hits = _ip_hits[client_ip]
@@ -202,6 +208,15 @@ async def basic_rate_limit(request: Request, call_next):
         hits.popleft()
 
     if len(hits) >= _RATE_LIMIT_PER_IP:
+        logger.warning(
+            "rate_limit_rejected method=%s path=%s client_ip=%s count=%s window_seconds=%s limit_per_minute=%s",
+            request.method,
+            request.url.path,
+            client_ip,
+            len(hits),
+            _RATE_WINDOW_SECONDS,
+            _RATE_LIMIT_PER_IP,
+        )
         return JSONResponse(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             content=ErrorBody(message="Too many requests").model_dump(),
@@ -226,8 +241,25 @@ async def request_debug_log(request: Request, call_next):
 
 
 @app.exception_handler(ServiceValidationError)
-def validation_exception_handler(_: Request, exc: ServiceValidationError):
-    return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=ErrorBody(message=str(exc)).model_dump())
+def validation_exception_handler(request: Request, exc: ServiceValidationError):
+    logger.warning(
+        "service_validation_error path=%s method=%s message=%s",
+        request.url.path,
+        request.method,
+        str(exc),
+    )
+    return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content=ErrorBody(message=str(exc)).model_dump())
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.warning(
+        "request_validation_error path=%s method=%s errors=%s",
+        request.url.path,
+        request.method,
+        exc.errors(),
+    )
+    return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": exc.errors()})
 
 
 @app.on_event("startup")

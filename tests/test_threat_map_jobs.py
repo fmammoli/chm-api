@@ -50,6 +50,7 @@ def _valid_payload() -> dict:
                 }
             ],
         },
+        "geojsonCrs": "EPSG:4326",
         "preset": "balanced",
     }
 
