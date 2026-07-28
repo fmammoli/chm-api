@@ -8,9 +8,12 @@ from pydantic import BaseModel, Field
 
 class JobStatus(str, Enum):
     queued = "queued"
+    deferred = "deferred"
     running = "running"
     succeeded = "succeeded"
+    partial_success = "partial_success"
     failed = "failed"
+    cancelled = "cancelled"
 
 
 class CropRequest(BaseModel):
@@ -89,6 +92,56 @@ class LandcoverStatsJobStatusResponse(BaseModel):
     etaSeconds: int | None = None
     message: str | None = None
     result: LandcoverStatsResult | None = None
+    error: ChmJobError | None = None
+
+
+class ThreatMapPreset(str, Enum):
+    balanced = "balanced"
+    high = "high"
+    ultra = "ultra"
+
+
+class ThreatMapJobCreateRequest(BaseModel):
+    geojson: dict[str, Any] = Field(description="GeoJSON Feature or FeatureCollection")
+    geojsonCrs: Literal["EPSG:4326", "EPSG:3857"] = Field(default="EPSG:3857")
+    overlayGeojson: dict[str, Any] | None = Field(default=None, description="Optional overlay GeoJSON to draw on each frame")
+    overlayGeojsonCrs: Literal["EPSG:4326", "EPSG:3857"] = Field(default="EPSG:3857")
+    preset: ThreatMapPreset = Field(default=ThreatMapPreset.balanced)
+    width: int | None = Field(default=None, ge=64, le=1024)
+    height: int | None = Field(default=None, ge=64, le=1024)
+    fps: float | None = Field(default=None, gt=0.05, le=2.0)
+    frameDurationSeconds: float | None = Field(default=None, gt=0.25, le=5.0)
+    outputFormat: Literal["mp4", "frames_tar_gz"] = Field(default="frames_tar_gz")
+
+
+class ThreatMapArtifact(str, Enum):
+    mp4 = "mp4"
+    zip = "zip"
+    frames_tar_gz = "frames_tar_gz"
+
+
+class ThreatMapJobResult(BaseModel):
+    downloadUrl: str
+    contentType: str
+    artifactType: ThreatMapArtifact
+    sizeBytes: int
+    yearsRendered: int
+    yearsExpected: int
+    fallbackReasonCode: str | None = None
+
+
+class ThreatMapJobStatusResponse(BaseModel):
+    jobId: str
+    status: JobStatus
+    createdAt: datetime
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    progress: int | None = None
+    etaSeconds: int | None = None
+    currentYear: int | None = None
+    message: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+    result: ThreatMapJobResult | None = None
     error: ChmJobError | None = None
 
 

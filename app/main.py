@@ -27,6 +27,8 @@ from app.models import (
     HealthResponse,
     LandcoverStatsJobCreateRequest,
     LandcoverStatsJobStatusResponse,
+    ThreatMapJobCreateRequest,
+    ThreatMapJobStatusResponse,
 )
 from app.security import require_api_key
 from app.services.chm_service import (
@@ -46,6 +48,16 @@ from app.services.job_service import (
     run_chm_job,
     run_landcover_stats_job,
 )
+from app.services.threat_map_queue import (
+    ThreatMapQueueFullError,
+    create_threat_map_job,
+    get_threat_map_job,
+    request_threat_map_cancel,
+    start_threat_map_worker,
+    stop_threat_map_worker,
+    threat_map_output_path,
+)
+from app.services.threat_map_service import validate_threat_map_request_payload
 
 # Configure logging to output to console
 logging.basicConfig(
@@ -170,9 +182,11 @@ def _run_landcover_job_with_slot(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=False,
-    allow_methods=["POST", "GET"],
-    allow_headers=["Content-Type", "X-API-Key"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["Content-Disposition", "Content-Type", "X-Content-Type-Options", "Cache-Control"],
 )
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
 
@@ -221,6 +235,12 @@ def reconcile_jobs_on_startup() -> None:
     reconciled = reconcile_incomplete_jobs(settings)
     if reconciled > 0:
         logger.warning("reconciled_interrupted_jobs count=%s", reconciled)
+    start_threat_map_worker(settings)
+
+
+@app.on_event("shutdown")
+def stop_workers_on_shutdown() -> None:
+    stop_threat_map_worker()
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -467,6 +487,159 @@ def get_landcover_stats_job(
         job.get("progress"),
     )
     return LandcoverStatsJobStatusResponse.model_validate(job)
+
+
+@app.post("/api/v1/threat-map/jobs", response_model=ChmJobCreateResponse, status_code=status.HTTP_202_ACCEPTED)
+def create_threat_map_async_job(
+    request: Request,
+    payload: ThreatMapJobCreateRequest,
+    _: None = Depends(require_api_key),
+):
+    logger.info(
+        "threat_map_job_create_request_received path=%s client_ip=%s preset=%s output_format=%s width=%s height=%s fps=%s frame_duration=%s",
+        request.url.path,
+        request.client.host if request.client else "unknown",
+        payload.preset,
+        payload.outputFormat,
+        payload.width,
+        payload.height,
+        payload.fps,
+        payload.frameDurationSeconds,
+    )
+
+    validate_threat_map_request_payload(payload, settings)
+    try:
+        job = create_threat_map_job(settings, payload)
+    except ThreatMapQueueFullError:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Threat-map queue is full. Please retry later.",
+        )
+
+    return ChmJobCreateResponse(
+        jobId=job["jobId"],
+        status=job["status"],
+        message="Threat-map job accepted",
+    )
+
+
+@app.get("/api/v1/threat-map/jobs/{job_id}", response_model=ThreatMapJobStatusResponse)
+def get_threat_map_async_job(
+    request: Request,
+    job_id: str,
+    _: None = Depends(require_api_key),
+):
+    logger.info(
+        "threat_map_job_status_request_received path=%s job_id=%s client_ip=%s",
+        request.url.path,
+        job_id,
+        request.client.host if request.client else "unknown",
+    )
+    job = get_threat_map_job(settings, job_id)
+    if job is None:
+        logger.warning("threat_map_job_status_not_found job_id=%s", job_id)
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=ErrorBody(message="Job not found").model_dump(),
+        )
+    logger.info(
+        "threat_map_job_status_response job_id=%s status=%s progress=%s current_year=%s",
+        job_id,
+        job.get("status"),
+        job.get("progress"),
+        job.get("currentYear"),
+    )
+    return ThreatMapJobStatusResponse.model_validate(job)
+
+
+@app.get("/api/v1/threat-map/jobs/{job_id}/download")
+def download_threat_map_job_result(
+    request: Request,
+    job_id: str,
+    _: None = Depends(require_api_key),
+):
+    logger.info(
+        "threat_map_job_download_request_received path=%s job_id=%s client_ip=%s",
+        request.url.path,
+        job_id,
+        request.client.host if request.client else "unknown",
+    )
+    job = get_threat_map_job(settings, job_id)
+    if job is None:
+        logger.warning("threat_map_job_download_not_found job_id=%s", job_id)
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=ErrorBody(message="Job not found").model_dump(),
+        )
+
+    if job.get("status") not in {"succeeded", "partial_success"}:
+        logger.info("threat_map_job_download_blocked job_id=%s status=%s", job_id, job.get("status"))
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content=ErrorBody(message=f"Job is not complete. Current status: {job.get('status')}").model_dump(),
+        )
+
+    result = job.get("result") or {}
+    artifact_type = str(result.get("artifactType", "mp4"))
+    output_path = threat_map_output_path(settings, job_id, artifact_type)
+    if not output_path.exists():
+        logger.warning(
+            "threat_map_job_download_missing_output job_id=%s artifact_type=%s expected_path=%s",
+            job_id,
+            artifact_type,
+            output_path,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=ErrorBody(message="Job result file not found").model_dump(),
+        )
+
+    if artifact_type == "zip":
+        content_type = "application/zip"
+        filename = f"threat_map_{job_id}.zip"
+    elif artifact_type == "frames_tar_gz":
+        content_type = "application/gzip"
+        filename = f"threat_map_{job_id}_frames.tar.gz"
+    else:
+        content_type = "video/mp4"
+        filename = f"threat_map_{job_id}.mp4"
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-store",
+    }
+    logger.info(
+        "threat_map_job_download_streaming job_id=%s artifact_type=%s size_bytes=%s content_type=%s",
+        job_id,
+        artifact_type,
+        output_path.stat().st_size,
+        content_type,
+    )
+    return StreamingResponse(stream_file_chunks(output_path), media_type=content_type, headers=headers)
+
+
+@app.delete("/api/v1/threat-map/jobs/{job_id}", response_model=ThreatMapJobStatusResponse, status_code=status.HTTP_202_ACCEPTED)
+def cancel_threat_map_async_job(
+    request: Request,
+    job_id: str,
+    _: None = Depends(require_api_key),
+):
+    logger.info(
+        "threat_map_job_cancel_request_received path=%s job_id=%s client_ip=%s",
+        request.url.path,
+        job_id,
+        request.client.host if request.client else "unknown",
+    )
+    job = request_threat_map_cancel(settings, job_id)
+    if job is None:
+        logger.warning("threat_map_job_cancel_not_found job_id=%s", job_id)
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=ErrorBody(message="Job not found").model_dump(),
+        )
+    logger.info("threat_map_job_cancel_response job_id=%s status=%s", job_id, job.get("status"))
+    return ThreatMapJobStatusResponse.model_validate(job)
 
 
 @app.post("/api/v1/ctrees/agb/crop")

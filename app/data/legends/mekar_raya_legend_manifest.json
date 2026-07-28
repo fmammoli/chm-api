@@ -1,0 +1,77 @@
+{
+  "name": "mekar_raya_legend_manifest",
+  "source": "mekar_raya.qgz",
+  "generatedAt": "2026-07-28T18:38:17.815742Z",
+  "entries": [
+    {
+      "class_code": "3",
+      "label": "Forest Formation / Formasi Hutan",
+      "color": "#1f8d49"
+    },
+    {
+      "class_code": "5",
+      "label": "Mangrove / Mangrove",
+      "color": "#04381d"
+    },
+    {
+      "class_code": "76",
+      "label": "Peat Swamp Forest / Hutan Rawa Gambut",
+      "color": "#2f7360"
+    },
+    {
+      "class_code": "13",
+      "label": "Non-Forest Natural Vegetation / Tumbuhan Non-Hutan Lainnya",
+      "color": "#d89f5c"
+    },
+    {
+      "class_code": "40",
+      "label": "Rice Paddy / Sawah",
+      "color": "#f272c2"
+    },
+    {
+      "class_code": "35",
+      "label": "Oil Palm / Sawit",
+      "color": "#9065d0"
+    },
+    {
+      "class_code": "9",
+      "label": "Pulpwood Plantation / Kebun Kayu",
+      "color": "#7a5900"
+    },
+    {
+      "class_code": "21",
+      "label": "Other Agriculture / Pertanian Lainnya",
+      "color": "#ffefc3"
+    },
+    {
+      "class_code": "30",
+      "label": "Mining Pit / Lubang Tambang",
+      "color": "#9c0027"
+    },
+    {
+      "class_code": "24",
+      "label": "Urban Area / Permukiman",
+      "color": "#d4271e"
+    },
+    {
+      "class_code": "25",
+      "label": "Other Non-Vegetation / Non-Vegetasi Lainnya",
+      "color": "#db4d4f"
+    },
+    {
+      "class_code": "31",
+      "label": "Aquaculture / Tambak",
+      "color": "#091077"
+    },
+    {
+      "class_code": "33",
+      "label": "River, Lake, Ocean / Sungai, Danau, Laut",
+      "color": "#2532e4"
+    },
+    {
+      "class_code": "27",
+      "label": "Not Observed / Citra Tertutup Awan",
+      "color": "#ffffff"
+    }
+  ]
+}
