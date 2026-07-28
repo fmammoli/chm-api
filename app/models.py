@@ -56,6 +56,42 @@ class CtreesAgbCropRequest(BaseModel):
     variable: Literal["agb", "uncertainty"] = Field(default="agb", description="Dataset variable to crop")
 
 
+class LandcoverStatsJobCreateRequest(BaseModel):
+    geojson: dict[str, Any] = Field(description="GeoJSON Feature or FeatureCollection")
+    baselineYear: int = Field(default=1990, ge=1985, le=2024, description="Baseline landcover year")
+    comparisonYear: int = Field(default=2024, ge=1985, le=2024, description="Comparison landcover year")
+
+
+class LandcoverStatsResult(BaseModel):
+    baselineYear: int
+    comparisonYear: int
+    forestLossHa: float
+    forestGainHa: float
+    forestLossPct: float | None = None
+    forestGainPct: float | None = None
+    netForestChangeHa: float
+    baselineForestAreaHa: float
+    comparisonForestAreaHa: float
+    analyzedAreaHa: float
+    aoiAreaHa: float
+    coverageFraction: float
+    validPixelCount: int
+    metadata: dict[str, Any] | None = None
+
+
+class LandcoverStatsJobStatusResponse(BaseModel):
+    jobId: str
+    status: JobStatus
+    createdAt: datetime
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    progress: int | None = None
+    etaSeconds: int | None = None
+    message: str | None = None
+    result: LandcoverStatsResult | None = None
+    error: ChmJobError | None = None
+
+
 class ErrorBody(BaseModel):
     message: str
 

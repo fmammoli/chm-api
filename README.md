@@ -42,7 +42,7 @@ uv run fastapi dev app/main.py
 
 - `POST /api/v1/chm/jobs`
 - Header: `X-API-Key: <your key>`
-- AOI behavior: input AOI is used as-is and must be a `FeatureCollection` square no larger than the configured maximum side (default 60 km).
+- AOI behavior: input AOI is used as-is and must be a `FeatureCollection` square no larger than the configured maximum side (default 30 km).
 - Body:
 
 ```json
@@ -111,11 +111,104 @@ Response example:
 - Header: `X-API-Key: <your key>`
 - This endpoint now enqueues a CHM job and returns `202` with `jobId` instead of streaming GeoTIFF directly.
 
+### Create landcover change stats job
+
+- `POST /api/v1/landcover/stats/jobs`
+- Header: `X-API-Key: <your key>`
+- AOI behavior: polygon input is validated as GeoJSON Feature or FeatureCollection, must be within Indonesia, and must stay within configured area limits.
+- Body:
+
+```json
+{
+	"baselineYear": 1990,
+	"comparisonYear": 2024,
+	"geojson": {
+		"type": "FeatureCollection",
+		"features": [
+			{
+				"type": "Feature",
+				"properties": {},
+				"geometry": {
+					"type": "Polygon",
+					"coordinates": [[[106.7, -6.4], [107.2, -6.4], [107.2, -6.0], [106.7, -6.0], [106.7, -6.4]]]
+				}
+			}
+		]
+	}
+}
+```
+
+Response (`202 Accepted`):
+
+```json
+{
+	"jobId": "e4b9f84d-bdd6-4b4d-9503-fdddc1fc9fd3",
+	"status": "queued",
+	"message": "Landcover stats job created"
+}
+```
+
+This endpoint is stats-only: it does not generate or return GeoTIFF/image outputs.
+
+### Check landcover change stats job
+
+- `GET /api/v1/landcover/stats/jobs/{job_id}`
+- Header: `X-API-Key: <your key>`
+
+Succeeded response example:
+
+```json
+{
+	"jobId": "e4b9f84d-bdd6-4b4d-9503-fdddc1fc9fd3",
+	"status": "succeeded",
+	"createdAt": "2026-07-28T09:12:10.100000Z",
+	"startedAt": "2026-07-28T09:12:10.200000Z",
+	"finishedAt": "2026-07-28T09:12:15.800000Z",
+	"progress": 100,
+	"etaSeconds": 0,
+	"message": "Landcover stats completed",
+	"result": {
+		"baselineYear": 1990,
+		"comparisonYear": 2024,
+		"forestLossHa": 128.4411,
+		"forestGainHa": 22.9934,
+		"forestLossPct": 14.2712,
+		"forestGainPct": 2.5548,
+		"netForestChangeHa": -105.4477,
+		"baselineForestAreaHa": 578.0122,
+		"comparisonForestAreaHa": 472.5645,
+		"analyzedAreaHa": 900.0,
+		"aoiAreaHa": 900.0,
+		"coverageFraction": 1.0,
+		"validPixelCount": 40000,
+		"metadata": {
+			"baselineUrl": "https://example/1990.tif",
+			"comparisonUrl": "https://example/2024.tif",
+			"baselineCrs": "EPSG:3857",
+			"comparisonCrs": "EPSG:3857",
+			"forestClasses": "3,4,5,9,49"
+		}
+	},
+	"error": null
+}
+```
+
+The response is JSON-only and includes computed numeric values for forest loss/gain and related metrics.
+
+Landcover source configuration notes:
+
+- `LANDCOVER_BASE_URL` currently defaults to `https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-maptiles`
+- `LANDCOVER_URL_TEMPLATE` defaults to PMTiles yearly files: `{base_url}/{year}_landcover.pmtiles`
+- If per-year paths are irregular, use `LANDCOVER_YEAR_1990_URL` and `LANDCOVER_YEAR_2024_URL`
+- PMTiles PNG mode computes stats by rasterizing AOI over tiles and applying forest legend colors from `LANDCOVER_FOREST_COLORS`
+- `LANDCOVER_FOREST_COLORS` should include only true forest legend colors (for example `1f8d49`); if palm oil classes are purple in your legend, do not include that purple value in forest colors
+- Optional raster fallback remains supported if `LANDCOVER_URL_TEMPLATE` points to GeoTIFF/COG assets
+
 ### Crop CTrees AGB raster
 
 - `POST /api/v1/ctrees/agb/crop`
 - Header: `X-API-Key: <your key>`
-- AOI behavior: input AOI is used as-is and must be a square no larger than the configured maximum side (default 60 km).
+- AOI behavior: input AOI is used as-is and must be a square no larger than the configured maximum side (default 30 km).
 - Body:
 
 ```json
@@ -154,7 +247,23 @@ Response:
 - API key authentication.
 - In-memory per-IP rate limit.
 - Input validation: geometry type, geometry validity, bounds, payload size, AOI size, vertex count, tile count.
-- AOI rule: input polygon is not rewritten; API validates it is square and does not exceed the configured maximum side length (default `60`).
+- Landcover job processing is asynchronous and uses the same queue/concurrency controls as CHM jobs.
+- AOI rule: input polygon is not rewritten; API validates it is square and does not exceed the configured maximum side length (default `30`).
+
+### CPX12 profile (1 vCPU, 2 GB RAM)
+
+For stable operation up to 30 km AOI side, start with:
+
+- `AOI_SQUARE_SIDE_KM=30`
+- `MAX_AOI_AREA_KM2=1200`
+- `MAX_TILES_PER_REQUEST=16`
+- `DOWNLOAD_WORKERS=2`
+- `MAX_CONCURRENT_CHM_JOBS=1`
+- `MAX_PENDING_CHM_JOBS=6`
+
+These defaults are now reflected in the sample deployment files.
+
+When queue pressure exceeds `MAX_PENDING_CHM_JOBS`, new CHM submissions are rejected with HTTP `429` to protect instance stability.
 - To change the default footprint for all deployments, edit the default in [app/config.py](app/config.py) and push the change.
 - Temporary files are cleaned after response.
 - Tile index metadata is cached in memory with TTL.

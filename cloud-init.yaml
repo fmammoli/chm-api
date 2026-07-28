@@ -56,10 +56,13 @@ write_files:
       CORS_ORIGINS=["https://beyond-carbon-webgis.vercel.app","http://localhost:3000"]
       TRUSTED_HOSTS=["localhost","127.0.0.1","beyond-carbon-webgis.vercel.app"]
       MAX_GEOJSON_BYTES=1000000
-      MAX_AOI_AREA_KM2=250000
+      MAX_AOI_AREA_KM2=1200
+      AOI_SQUARE_SIDE_KM=30
       MAX_VERTICES=50000
-      MAX_TILES_PER_REQUEST=128
-      DOWNLOAD_WORKERS=6
+      MAX_TILES_PER_REQUEST=16
+      DOWNLOAD_WORKERS=2
+      MAX_CONCURRENT_CHM_JOBS=1
+      MAX_PENDING_CHM_JOBS=6
       RATE_LIMIT_PER_MINUTE=30
       EOF
 

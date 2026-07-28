@@ -7,6 +7,8 @@ import tempfile
 import time
 from collections import defaultdict, deque
 from pathlib import Path
+from threading import BoundedSemaphore, Lock
+from typing import Any
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +25,8 @@ from app.models import (
     CropRequest,
     ErrorBody,
     HealthResponse,
+    LandcoverStatsJobCreateRequest,
+    LandcoverStatsJobStatusResponse,
 )
 from app.security import require_api_key
 from app.services.chm_service import (
@@ -32,6 +36,7 @@ from app.services.chm_service import (
     stream_file_chunks,
     validate_chm_request_payload,
 )
+from app.services.landcover_stats_service import validate_landcover_request_payload
 from app.services.job_service import (
     create_job,
     get_job,
@@ -39,6 +44,7 @@ from app.services.job_service import (
     job_output_path,
     reconcile_incomplete_jobs,
     run_chm_job,
+    run_landcover_stats_job,
 )
 
 # Configure logging to output to console
@@ -95,9 +101,71 @@ if not any(getattr(handler, "_chm_console", False) for handler in logger.handler
 logger.setLevel(logging.INFO)
 logger.propagate = False
 
+_JOB_ADMISSION_LOCK = Lock()
+_CHM_JOB_SLOTS = BoundedSemaphore(value=max(1, settings.max_concurrent_chm_jobs))
+
 _RATE_WINDOW_SECONDS = 60
 _RATE_LIMIT_PER_IP = settings.rate_limit_per_minute
 _ip_hits: dict[str, deque[float]] = defaultdict(deque)
+
+
+def _admit_chm_job_or_reject(*, endpoint: str, message: str) -> tuple[dict[str, Any], dict[str, int]]:
+    with _JOB_ADMISSION_LOCK:
+        queue_before = get_queue_snapshot(settings)
+        pending = queue_before["queued"] + queue_before["running"]
+        if pending >= settings.max_pending_chm_jobs:
+            logger.warning(
+                "job_admission_rejected endpoint=%s pending=%s max_pending=%s queue_counts queued=%s running=%s succeeded=%s failed=%s",
+                endpoint,
+                pending,
+                settings.max_pending_chm_jobs,
+                queue_before["queued"],
+                queue_before["running"],
+                queue_before["succeeded"],
+                queue_before["failed"],
+            )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Job queue is full. Please retry in a few minutes.",
+            )
+
+        job = create_job(settings, message=message)
+        queue_after = get_queue_snapshot(settings)
+        return job, queue_after
+
+
+def _run_chm_job_with_slot(settings, job_id: str, geojson_obj: dict[str, Any]) -> None:
+    logger.info("job_worker_waiting_for_slot job_id=%s max_concurrent=%s", job_id, settings.max_concurrent_chm_jobs)
+    _CHM_JOB_SLOTS.acquire()
+    try:
+        logger.info("job_worker_slot_acquired job_id=%s", job_id)
+        run_chm_job(settings, job_id, geojson_obj)
+    finally:
+        _CHM_JOB_SLOTS.release()
+        logger.info("job_worker_slot_released job_id=%s", job_id)
+
+
+def _run_landcover_job_with_slot(
+    settings,
+    job_id: str,
+    geojson_obj: dict[str, Any],
+    baseline_year: int,
+    comparison_year: int,
+) -> None:
+    logger.info("landcover_job_worker_waiting_for_slot job_id=%s max_concurrent=%s", job_id, settings.max_concurrent_chm_jobs)
+    _CHM_JOB_SLOTS.acquire()
+    try:
+        logger.info("landcover_job_worker_slot_acquired job_id=%s", job_id)
+        run_landcover_stats_job(
+            settings,
+            job_id,
+            geojson_obj,
+            baseline_year,
+            comparison_year,
+        )
+    finally:
+        _CHM_JOB_SLOTS.release()
+        logger.info("landcover_job_worker_slot_released job_id=%s", job_id)
 
 app.add_middleware(
     CORSMiddleware,
@@ -208,9 +276,8 @@ def create_chm_job(
         request.client.host if request.client else "unknown",
     )
     validate_chm_request_payload(payload.geojson, settings)
-    job = create_job(settings)
-    background_tasks.add_task(run_chm_job, settings, job["jobId"], payload.geojson)
-    queue = get_queue_snapshot(settings)
+    job, queue = _admit_chm_job_or_reject(endpoint="/api/v1/chm/jobs", message="CHM extraction job created")
+    background_tasks.add_task(_run_chm_job_with_slot, settings, job["jobId"], payload.geojson)
     logger.info(
         "job_create_enqueued job_id=%s queue_counts queued=%s running=%s succeeded=%s failed=%s",
         job["jobId"],
@@ -312,9 +379,11 @@ def crop_chm_compat(
         request.client.host if request.client else "unknown",
     )
     validate_chm_request_payload(payload.geojson, settings)
-    job = create_job(settings, message="Legacy crop endpoint accepted; poll job status")
-    background_tasks.add_task(run_chm_job, settings, job["jobId"], payload.geojson)
-    queue = get_queue_snapshot(settings)
+    job, queue = _admit_chm_job_or_reject(
+        endpoint="/api/v1/chm/crop",
+        message="Legacy crop endpoint accepted; poll job status",
+    )
+    background_tasks.add_task(_run_chm_job_with_slot, settings, job["jobId"], payload.geojson)
     logger.info(
         "legacy_crop_redirected_to_job job_id=%s queue_counts queued=%s running=%s succeeded=%s failed=%s",
         job["jobId"],
@@ -328,6 +397,76 @@ def crop_chm_compat(
         status=job["status"],
         message="CHM extraction job created. Use /api/v1/chm/jobs/{jobId} to poll and /download to fetch TIFF.",
     )
+
+
+@app.post("/api/v1/landcover/stats/jobs", response_model=ChmJobCreateResponse, status_code=status.HTTP_202_ACCEPTED)
+def create_landcover_stats_job(
+    request: Request,
+    payload: LandcoverStatsJobCreateRequest,
+    background_tasks: BackgroundTasks,
+    _: None = Depends(require_api_key),
+):
+    logger.info(
+        "landcover_job_create_request_received path=%s client_ip=%s baseline_year=%s comparison_year=%s",
+        request.url.path,
+        request.client.host if request.client else "unknown",
+        payload.baselineYear,
+        payload.comparisonYear,
+    )
+    validate_landcover_request_payload(payload.geojson, settings)
+    job, queue = _admit_chm_job_or_reject(
+        endpoint="/api/v1/landcover/stats/jobs",
+        message="Landcover stats job created",
+    )
+    background_tasks.add_task(
+        _run_landcover_job_with_slot,
+        settings,
+        job["jobId"],
+        payload.geojson,
+        payload.baselineYear,
+        payload.comparisonYear,
+    )
+    logger.info(
+        "landcover_job_create_enqueued job_id=%s queue_counts queued=%s running=%s succeeded=%s failed=%s",
+        job["jobId"],
+        queue["queued"],
+        queue["running"],
+        queue["succeeded"],
+        queue["failed"],
+    )
+    return ChmJobCreateResponse(
+        jobId=job["jobId"],
+        status=job["status"],
+        message="Landcover stats job created",
+    )
+
+
+@app.get("/api/v1/landcover/stats/jobs/{job_id}", response_model=LandcoverStatsJobStatusResponse)
+def get_landcover_stats_job(
+    request: Request,
+    job_id: str,
+    _: None = Depends(require_api_key),
+):
+    logger.info(
+        "landcover_job_status_request_received path=%s job_id=%s client_ip=%s",
+        request.url.path,
+        job_id,
+        request.client.host if request.client else "unknown",
+    )
+    job = get_job(settings, job_id)
+    if job is None:
+        logger.warning("landcover_job_status_not_found job_id=%s", job_id)
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=ErrorBody(message="Job not found").model_dump(),
+        )
+    logger.info(
+        "landcover_job_status_response job_id=%s status=%s progress=%s",
+        job_id,
+        job.get("status"),
+        job.get("progress"),
+    )
+    return LandcoverStatsJobStatusResponse.model_validate(job)
 
 
 @app.post("/api/v1/ctrees/agb/crop")

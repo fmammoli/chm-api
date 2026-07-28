@@ -32,10 +32,12 @@ from shapely.strtree import STRtree
 from app.config import Settings
 
 # Enable fast remote COG access with GDAL
-os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "YES"
-os.environ["CPL_VSIL_CURL_ALLOWED_EXTENSIONS"] = ".tif"
-os.environ["CPL_VSIL_CURL_CHUNK_SIZE"] = "8388608"  # 8MB chunks
-os.environ["GDAL_HTTP_TIMEOUT"] = "30"
+os.environ.setdefault("GDAL_DISABLE_READDIR_ON_OPEN", "YES")
+os.environ.setdefault("CPL_VSIL_CURL_ALLOWED_EXTENSIONS", ".tif")
+os.environ.setdefault("CPL_VSIL_CURL_CHUNK_SIZE", "4194304")  # 4MB chunks
+os.environ.setdefault("GDAL_HTTP_TIMEOUT", "120")
+os.environ.setdefault("GDAL_HTTP_MAX_RETRY", "4")
+os.environ.setdefault("GDAL_HTTP_RETRY_DELAY", "2")
 
 logger = logging.getLogger("chm_api")
 
@@ -57,6 +59,8 @@ _TRANSFORMER_CACHE: dict[tuple[str, str], Transformer] = {}
 TILE_CACHE_TTL_SECONDS = 300.0
 DEFAULT_OVERVIEW_LEVELS = (2, 4, 8, 16, 32)
 DEFAULT_BLOCK_SIZE = 512
+REMOTE_TILE_READ_RETRIES = int(os.getenv("REMOTE_TILE_READ_RETRIES", "4"))
+REMOTE_TILE_RETRY_BACKOFF_SECONDS = float(os.getenv("REMOTE_TILE_RETRY_BACKOFF_SECONDS", "1.0"))
 
 
 def _get_remote_tile_url(settings: Settings, tile_name: str) -> str:
@@ -583,60 +587,82 @@ def build_cropped_raster(
     geom_mapping_cache: dict[str, dict] = {}
     geom_cache_lock = Lock()
 
-    def _crop_tile_part(tile_idx: int, tile_url: str):
-        with rasterio.open(tile_url) as src:
-            if src.crs is None:
-                raise ServiceValidationError("Source tile CRS is missing")
+    def _crop_tile_part(tile_idx: int, tile_url: str) -> tuple[int, str, DatasetReader, MemoryFile, object, str, float]:
+        last_exc: Exception | None = None
+        for attempt in range(1, REMOTE_TILE_READ_RETRIES + 1):
+            try:
+                with rasterio.open(tile_url) as src:
+                    if src.crs is None:
+                        raise ServiceValidationError("Source tile CRS is missing")
 
-            src_crs_key = str(src.crs)
-            geom_mapping = geom_mapping_cache.get(src_crs_key)
-            if geom_mapping is None:
-                geom_src_crs = _transform_geometry_to_crs(geom, src.crs)
-                geom_mapping = mapping(geom_src_crs)
-                with geom_cache_lock:
-                    geom_mapping_cache.setdefault(src_crs_key, geom_mapping)
+                    src_crs_key = str(src.crs)
+                    geom_mapping = geom_mapping_cache.get(src_crs_key)
+                    if geom_mapping is None:
+                        geom_src_crs = _transform_geometry_to_crs(geom, src.crs)
+                        geom_mapping = mapping(geom_src_crs)
+                        with geom_cache_lock:
+                            geom_mapping_cache.setdefault(src_crs_key, geom_mapping)
 
-            tile_nodata = _resolve_nodata(src)
-            image, transform = rasterio.mask.mask(
-                src,
-                [geom_mapping],
-                crop=True,
-                nodata=tile_nodata,
-                all_touched=False,
-                filled=True,
-            )
+                    tile_nodata = _resolve_nodata(src)
+                    image, transform = rasterio.mask.mask(
+                        src,
+                        [geom_mapping],
+                        crop=True,
+                        nodata=tile_nodata,
+                        all_touched=False,
+                        filled=True,
+                    )
 
-            valid_pixels, total_pixels, coverage_fraction = _coverage_stats(image[0], tile_nodata)
-            logger.info(
-                "🧩 Tile mask coverage tile=%s size=%dx%d valid=%d/%d (%.2f%%) src_nodata=%s resolved_nodata=%s",
-                tile_url.split("/")[-1],
-                image.shape[2],
-                image.shape[1],
-                valid_pixels,
-                total_pixels,
-                coverage_fraction * 100.0,
-                src.nodata,
-                tile_nodata,
-            )
+                    valid_pixels, total_pixels, coverage_fraction = _coverage_stats(image[0], tile_nodata)
+                    logger.info(
+                        "🧩 Tile mask coverage tile=%s size=%dx%d valid=%d/%d (%.2f%%) src_nodata=%s resolved_nodata=%s",
+                        tile_url.split("/")[-1],
+                        image.shape[2],
+                        image.shape[1],
+                        valid_pixels,
+                        total_pixels,
+                        coverage_fraction * 100.0,
+                        src.nodata,
+                        tile_nodata,
+                    )
 
-            mem = MemoryFile()
-            with mem.open(
-                driver="GTiff",
-                count=image.shape[0],
-                dtype=src.dtypes[0],
-                height=image.shape[1],
-                width=image.shape[2],
-                crs=src.crs,
-                transform=transform,
-                nodata=tile_nodata,
-            ) as tmp_ds:
-                tmp_ds.write(image)
+                    mem = MemoryFile()
+                    with mem.open(
+                        driver="GTiff",
+                        count=image.shape[0],
+                        dtype=src.dtypes[0],
+                        height=image.shape[1],
+                        width=image.shape[2],
+                        crs=src.crs,
+                        transform=transform,
+                        nodata=tile_nodata,
+                    ) as tmp_ds:
+                        tmp_ds.write(image)
 
-            return tile_idx, tile_url, mem.open(), mem, src.crs, src.dtypes[0], tile_nodata
+                    return tile_idx, tile_url, cast(DatasetReader, mem.open()), mem, src.crs, src.dtypes[0], tile_nodata
+            except Exception as exc:
+                last_exc = exc
+                if attempt < REMOTE_TILE_READ_RETRIES:
+                    logger.warning(
+                        "tile_crop_retry tile=%s attempt=%s/%s error=%s",
+                        tile_url,
+                        attempt,
+                        REMOTE_TILE_READ_RETRIES,
+                        str(exc),
+                    )
+                    time.sleep(REMOTE_TILE_RETRY_BACKOFF_SECONDS * attempt)
+                    continue
+                raise ServiceValidationError(
+                    f"Failed to read/crop tile after {REMOTE_TILE_READ_RETRIES} attempts: {tile_url}"
+                ) from last_exc
+        raise ServiceValidationError(f"Failed to read/crop tile: {tile_url}")
 
     t_crop_start = time.perf_counter()
     crop_results: list[tuple[int, str, DatasetReader, MemoryFile, object, str, float]] = []
-    max_workers = max(1, settings.download_workers)
+    # Bound parallelism to avoid CPU/RAM thrash on small instances like CPX12.
+    cpu_bound_limit = max(1, (os.cpu_count() or 1) * 2)
+    max_workers = max(1, min(settings.download_workers, len(tile_urls), cpu_bound_limit))
+    failed_tiles: list[tuple[str, str]] = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_tile = {
             executor.submit(_crop_tile_part, i, tile_url): (i, tile_url)
@@ -650,7 +676,8 @@ def build_cropped_raster(
             try:
                 crop_results.append(future.result())
             except Exception as e:
-                logger.warning("⚠️ Failed to crop tile %s: %s", tile_url, str(e))
+                failed_tiles.append((tile_url.split("/")[-1], str(e)))
+                logger.exception("⚠️ Failed to crop tile %s", tile_url)
             completed_tiles += 1
             tile_progress = 35 + int((completed_tiles / total_tiles) * 45)
             _report_progress(tile_progress, f"Processed {completed_tiles}/{total_tiles} tiles")
@@ -668,6 +695,9 @@ def build_cropped_raster(
     t_crop_end = time.perf_counter()
 
     if not cropped_datasets:
+        if failed_tiles:
+            details = "; ".join(f"{name}: {reason}" for name, reason in failed_tiles[:3])
+            raise ServiceValidationError(f"Failed to process any tiles. Tile errors: {details}")
         raise ServiceValidationError("Failed to process any tiles")
 
     try:

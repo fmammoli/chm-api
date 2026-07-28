@@ -82,6 +82,48 @@ def test_create_job_invalid_api_key(monkeypatch, tmp_path: Path):
     assert response.status_code == 401
 
 
+def test_create_job_rejects_when_queue_is_full(monkeypatch, tmp_path: Path):
+    client, main_module = _load_main_with_env(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(main_module, "validate_chm_request_payload", lambda geojson, settings: None)
+    monkeypatch.setattr(
+        main_module,
+        "get_queue_snapshot",
+        lambda _settings: {"queued": 6, "running": 0, "succeeded": 0, "failed": 0},
+    )
+
+    response = client.post(
+        "/api/v1/chm/jobs",
+        json=_valid_payload(),
+        headers={"host": "localhost", "X-API-Key": "test-key"},
+    )
+
+    assert response.status_code == 429
+    payload = response.json()
+    assert payload["detail"] == "Job queue is full. Please retry in a few minutes."
+
+
+def test_legacy_crop_rejects_when_queue_is_full(monkeypatch, tmp_path: Path):
+    client, main_module = _load_main_with_env(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(main_module, "validate_chm_request_payload", lambda geojson, settings: None)
+    monkeypatch.setattr(
+        main_module,
+        "get_queue_snapshot",
+        lambda _settings: {"queued": 6, "running": 0, "succeeded": 0, "failed": 0},
+    )
+
+    response = client.post(
+        "/api/v1/chm/crop",
+        json=_valid_payload(),
+        headers={"host": "localhost", "X-API-Key": "test-key"},
+    )
+
+    assert response.status_code == 429
+    payload = response.json()
+    assert payload["detail"] == "Job queue is full. Please retry in a few minutes."
+
+
 def test_get_job_status_invalid_api_key(monkeypatch, tmp_path: Path):
     client, main_module = _load_main_with_env(monkeypatch, tmp_path)
     created = create_job(main_module.settings)
@@ -99,7 +141,7 @@ def test_create_job_oversized_aoi_returns_422(monkeypatch, tmp_path: Path):
 
     def _raise_validation(_geojson, _settings):
         raise ServiceValidationError(
-            "AOI square side is 72.50 km (width=72.50 km, height=71.90 km). Maximum allowed is 60.0 km."
+            "AOI square side is 72.50 km (width=72.50 km, height=71.90 km). Maximum allowed is 30.0 km."
         )
 
     monkeypatch.setattr(main_module, "validate_chm_request_payload", _raise_validation)
@@ -113,7 +155,7 @@ def test_create_job_oversized_aoi_returns_422(monkeypatch, tmp_path: Path):
     assert response.status_code == 422
     payload = response.json()
     assert "72.50 km" in payload["message"]
-    assert "60.0 km" in payload["message"]
+    assert "30.0 km" in payload["message"]
 
 
 def test_get_job_status_states(monkeypatch, tmp_path: Path):
