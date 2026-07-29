@@ -16,11 +16,13 @@ from app.services.threat_map_service import (
     ThreatMapResourceLimitError,
     YEARS,
     _build_zip_fallback,
-    _class_color_map,
     _draw_overlay_geometry,
     _fetch_single_tile_with_retry,
     _load_legend_entries,
+    _load_legend_entries_from_mapbiomas_colors_path,
     _load_legend_entries_from_qgz_path,
+    _resolve_output_format,
+    _resolve_threat_map_year_url,
     _resolve_overlay_geojson_inputs,
     process_threat_map_job,
     _to_rgb,
@@ -109,8 +111,19 @@ def test_year_span_invariant():
     assert YEARS[-1] == 2024
 
 
-def test_to_rgb_applies_manifest_class_colors():
-    # PMTiles class-coded convention: class in R, sentinel G/B = 127/0.
+def test_resolve_output_format_forces_frames_archive_when_server_mp4_generation_disabled():
+    settings = Settings(threat_map_enable_server_mp4_generation=False)
+
+    assert _resolve_output_format("mp4", settings) == "frames_tar_gz"
+
+
+def test_resolve_output_format_keeps_mp4_when_enabled():
+    settings = Settings(threat_map_enable_server_mp4_generation=True)
+
+    assert _resolve_output_format("mp4", settings) == "mp4"
+
+
+def test_to_rgb_preserves_baked_pmtiles_colors():
     image = np.array(
         [
             [[3, 127, 0], [5, 127, 0]],
@@ -119,19 +132,12 @@ def test_to_rgb_applies_manifest_class_colors():
         dtype=np.uint8,
     )
 
-    legend_entries = [
-        {"class_code": "3", "label": "Forest", "color": "#1f8d49"},
-        {"class_code": "5", "label": "Mangrove", "color": "#04381d"},
-        {"class_code": "76", "label": "Peat", "color": "#2f7360"},
-        {"class_code": "9", "label": "Pulpwood", "color": "#7a5900"},
-    ]
+    mapped = _to_rgb(image)
 
-    mapped = _to_rgb(image, _class_color_map(legend_entries))
-
-    assert tuple(mapped[0, 0, :]) == (0x1F, 0x8D, 0x49)
-    assert tuple(mapped[0, 1, :]) == (0x04, 0x38, 0x1D)
-    assert tuple(mapped[1, 0, :]) == (0x2F, 0x73, 0x60)
-    assert tuple(mapped[1, 1, :]) == (0x7A, 0x59, 0x00)
+    assert tuple(mapped[0, 0, :]) == (3, 127, 0)
+    assert tuple(mapped[0, 1, :]) == (5, 127, 0)
+    assert tuple(mapped[1, 0, :]) == (76, 127, 0)
+    assert tuple(mapped[1, 1, :]) == (9, 127, 0)
 
 
 def test_to_rgb_handles_read_only_input_array():
@@ -143,15 +149,31 @@ def test_to_rgb_handles_read_only_input_array():
     )
     image.setflags(write=False)
 
-    legend_entries = [
-        {"class_code": "3", "label": "Forest", "color": "#1f8d49"},
-        {"class_code": "5", "label": "Mangrove", "color": "#04381d"},
-    ]
+    mapped = _to_rgb(image)
 
-    mapped = _to_rgb(image, _class_color_map(legend_entries))
+    assert tuple(mapped[0, 0, :]) == (3, 127, 0)
+    assert tuple(mapped[0, 1, :]) == (5, 127, 0)
 
-    assert tuple(mapped[0, 0, :]) == (0x1F, 0x8D, 0x49)
-    assert tuple(mapped[0, 1, :]) == (0x04, 0x38, 0x1D)
+
+def test_resolve_threat_map_year_url_uses_threat_map_bucket_defaults():
+    settings = Settings()
+
+    resolved = _resolve_threat_map_year_url(settings, 1990)
+
+    assert (
+        resolved
+        == "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/1990_landcover.pmtiles"
+    )
+
+
+def test_load_legend_entries_from_mapbiomas_colors_path_reads_palette(tmp_path: Path):
+    colors_path = tmp_path / "mapbiomas-colors.txt"
+    colors_path.write_text("3 31 141 73 255 # Forest Formation\n5 4 56 29 255 # Mangrove\n", encoding="utf-8")
+
+    entries = _load_legend_entries_from_mapbiomas_colors_path(str(colors_path))
+
+    assert entries[0] == {"class_code": "3", "label": "Forest Formation", "color": "#1f8d49"}
+    assert entries[1] == {"class_code": "5", "label": "Mangrove", "color": "#04381d"}
 
 
 def test_load_legend_entries_from_qgz_path_reads_palette(tmp_path: Path):
@@ -180,7 +202,7 @@ def test_load_legend_entries_from_qgz_path_reads_palette(tmp_path: Path):
         assert entries[1] == {"class_code": "5", "label": "Mangrove", "color": "#04381d"}
 
 
-def test_load_legend_entries_falls_back_to_qgz_when_manifest_missing(tmp_path: Path, monkeypatch):
+def test_load_legend_entries_falls_back_to_qgz_when_manifest_and_colors_missing(tmp_path: Path, monkeypatch):
         qgs_xml = """
 <qgis>
     <projectlayers>
@@ -200,7 +222,10 @@ def test_load_legend_entries_falls_back_to_qgz_when_manifest_missing(tmp_path: P
                 archive.writestr("mekar_raya.qgs", qgs_xml)
 
         monkeypatch.chdir(tmp_path)
-        settings = Settings(threat_map_legend_manifest_path=tmp_path / "missing_manifest.json")
+        settings = Settings(
+            threat_map_legend_manifest_path=tmp_path / "missing_manifest.json",
+            threat_map_legend_colors_path=tmp_path / "missing_colors.txt",
+        )
         entries = _load_legend_entries(settings)
 
         assert len(entries) == 1

@@ -188,6 +188,31 @@ def test_pmtiles_class_encoded_rgb_uses_class_channel_for_forest_mask_and_validi
     assert forest_mask.tolist() == [[True, False], [True, False]]
 
 
+def test_pmtiles_class_encoded_r_only_uses_red_channel_for_forest_mask_and_validity():
+    image = np.array(
+        [
+            [[3, 0, 0], [0, 0, 0]],
+            [[76, 0, 0], [24, 0, 0]],
+        ],
+        dtype=np.uint8,
+    )
+
+    class_values = _extract_pmtiles_class_values(image)
+    assert class_values is not None
+    assert class_values.tolist() == [[3, 0], [76, 24]]
+
+    valid_mask = _valid_mask_from_pmtiles_image(image, class_values)
+    assert valid_mask.tolist() == [[True, False], [True, True]]
+
+    forest_mask = _forest_mask_from_pmtiles_image(
+        image,
+        class_values=class_values,
+        forest_classes={3, 5, 76},
+        forest_colors={(31, 141, 73)},
+    )
+    assert forest_mask.tolist() == [[True, False], [True, False]]
+
+
 def test_pmtiles_rgba_still_supports_color_based_forest_mask_when_not_class_encoded():
     image = np.array(
         [

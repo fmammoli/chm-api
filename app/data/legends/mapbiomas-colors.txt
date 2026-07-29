@@ -1,0 +1,14 @@
+3 31 141 73 255 # Forest Formation
+5 4 56 29 255 # Mangrove
+76 47 115 96 255 # Peat Swamp Forest
+13 216 159 92 255 # Non-Forest Natural Vegetation
+40 213 178 247 255 # Rice Paddy
+35 144 101 208 255 # Oil Palm
+9 122 89 0 255 # Pulpwood Plantation
+21 255 239 195 255 # Other Agriculture
+30 156 0 39 255 # Mining Pit
+24 212 39 30 255 # Urban Area
+25 219 77 79 255 # Other Non-Vegetation
+31 9 16 119 255 # Aquaculture
+33 37 50 228 255 # River, Lake, Ocean
+27 255 255 255 255 # Not Observed

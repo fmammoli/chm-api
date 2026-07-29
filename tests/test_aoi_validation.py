@@ -2,7 +2,7 @@ from pyproj import Transformer
 from shapely.geometry import box
 from shapely.ops import transform as shapely_transform
 
-from app.services.chm_service import ServiceValidationError, _validate_square_size
+from app.services.chm_service import ServiceValidationError, _extract_geometry, _validate_square_size
 
 
 def _square_wgs84(side_km: float):
@@ -42,3 +42,24 @@ def test_validate_square_size_rejects_non_square() -> None:
         assert "AOI must be a square" in str(exc)
     else:
         raise AssertionError("expected AOI square-shape validation to fail")
+
+def test_extract_geometry_repairs_self_intersecting_polygon() -> None:
+    geojson_obj = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [[0.0, 0.0], [2.0, 2.0], [0.0, 2.0], [2.0, 0.0], [0.0, 0.0]]
+                    ],
+                },
+            }
+        ],
+    }
+
+    geom = _extract_geometry(geojson_obj)
+
+    assert geom.geom_type in {"Polygon", "MultiPolygon"}
+    assert geom.is_valid

@@ -24,10 +24,11 @@ from rasterio.io import DatasetReader, MemoryFile
 from rasterio.merge import merge
 from rasterio.shutil import copy as rio_copy
 from rasterio.warp import calculate_default_transform, reproject
-from shapely.geometry import mapping, shape
+from shapely.geometry import GeometryCollection, mapping, shape
 from shapely.geometry.base import BaseGeometry
-from shapely.ops import transform as shapely_transform
+from shapely.ops import transform as shapely_transform, unary_union
 from shapely.strtree import STRtree
+from shapely.validation import make_valid
 
 from app.config import Settings
 
@@ -68,6 +69,28 @@ def _get_remote_tile_url(settings: Settings, tile_name: str) -> str:
     return f"https://{settings.s3_bucket}.s3.amazonaws.com/{settings.s3_path}chm/{tile_name}.tif"
 
 
+def _repair_geometry(geom: BaseGeometry) -> BaseGeometry:
+    if geom.is_empty:
+        raise ServiceValidationError("GeoJSON geometry is empty")
+
+    repaired = make_valid(geom)
+    if repaired.is_empty:
+        raise ServiceValidationError("GeoJSON geometry is empty")
+
+    if repaired.geom_type not in {"Polygon", "MultiPolygon", "GeometryCollection"}:
+        return repaired
+
+    if isinstance(repaired, GeometryCollection):
+        parts = [part for part in repaired.geoms if getattr(part, "is_empty", False) is False]
+        if not parts:
+            raise ServiceValidationError("GeoJSON geometry is empty")
+        if len(parts) == 1:
+            return parts[0]
+        return unary_union(parts)
+
+    return repaired
+
+
 def _extract_geometry(geojson_obj: dict) -> BaseGeometry:
     try:
         geo_type = geojson_obj.get("type")
@@ -84,13 +107,14 @@ def _extract_geometry(geojson_obj: dict) -> BaseGeometry:
                 if not feature_geom:
                     raise ServiceValidationError("GeoJSON feature is missing geometry")
                 geom = geom.union(shape(feature_geom))
-            return geom
+            return _repair_geometry(geom)
         if geo_type == "Feature":
             geom = geojson_obj.get("geometry")
             if not geom:
                 raise ServiceValidationError("GeoJSON feature is missing geometry")
-            return shape(geom)
-        return shape(geojson_obj)
+            return _repair_geometry(shape(geom))
+        geom = shape(geojson_obj)
+        return _repair_geometry(geom)
     except ServiceValidationError:
         raise
     except Exception as exc:

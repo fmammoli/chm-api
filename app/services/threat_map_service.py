@@ -33,8 +33,6 @@ from app.services.chm_service import ServiceValidationError, _extract_geometry, 
 from app.services.landcover_stats_service import (
     _build_pmtiles_reader,
     _decode_pmtiles_png_tile,
-    _extract_pmtiles_class_values,
-    _resolve_year_url,
 )
 
 
@@ -155,24 +153,40 @@ def validate_threat_map_request_payload(payload: ThreatMapJobCreateRequest, sett
     }
 
 
+def _resolve_output_format(requested_format: str, settings: Settings) -> str:
+    if requested_format == "mp4" and not settings.threat_map_enable_server_mp4_generation:
+        logger.info("threat_map_server_mp4_generation_disabled requested_format=mp4 resolved_format=frames_tar_gz")
+        return "frames_tar_gz"
+    return requested_format
+
+
 def _resolve_render_options(payload: ThreatMapJobCreateRequest, settings: Settings) -> RenderOptions:
-    if payload.preset == ThreatMapPreset.balanced:
-        base_size = settings.threat_map_balanced_size
-    elif payload.preset == ThreatMapPreset.high:
-        base_size = settings.threat_map_high_size
+    if settings.threat_map_low_resource_mode:
+        base_size = settings.threat_map_low_resource_width
+        max_size = settings.threat_map_low_resource_max_size
+        default_fps = settings.threat_map_low_resource_fps
+        default_frame_duration = settings.threat_map_low_resource_frame_duration_seconds
     else:
-        raise ServiceValidationError("Unsupported preset")
+        if payload.preset == ThreatMapPreset.balanced:
+            base_size = settings.threat_map_balanced_size
+        elif payload.preset == ThreatMapPreset.high:
+            base_size = settings.threat_map_high_size
+        else:
+            raise ServiceValidationError("Unsupported preset")
+        max_size = settings.threat_map_max_size
+        default_fps = settings.threat_map_default_fps
+        default_frame_duration = settings.threat_map_default_frame_duration_seconds
 
     width = payload.width or base_size
     height = payload.height or base_size
-    if width > settings.threat_map_max_size or height > settings.threat_map_max_size:
-        raise ServiceValidationError(f"Threat map max size is {settings.threat_map_max_size}x{settings.threat_map_max_size}")
+    if width > max_size or height > max_size:
+        raise ServiceValidationError(f"Threat map max size is {max_size}x{max_size}")
 
-    fps = payload.fps if payload.fps is not None else settings.threat_map_default_fps
+    fps = payload.fps if payload.fps is not None else default_fps
     frame_duration = (
         payload.frameDurationSeconds
         if payload.frameDurationSeconds is not None
-        else settings.threat_map_default_frame_duration_seconds
+        else default_frame_duration
     )
 
     return RenderOptions(
@@ -202,6 +216,7 @@ def process_threat_map_job(
     if used_embedded_overlay:
         logger.info("threat_map_overlay_extracted_from_geojson features_embedded=true")
     options = _resolve_render_options(payload, settings)
+    output_format = _resolve_output_format(payload.outputFormat, settings)
 
     if YEARS[0] != 1990 or YEARS[-1] != 2024:
         raise ThreatMapError("internal_invariant", "Unexpected configured year span")
@@ -221,7 +236,7 @@ def process_threat_map_job(
         "threat_map_process_start job_id=%s preset=%s output_format=%s width=%s height=%s fps=%s frame_duration=%s",
         job_id,
         payload.preset,
-        payload.outputFormat,
+        output_format,
         options.width,
         options.height,
         options.fps,
@@ -229,7 +244,7 @@ def process_threat_map_job(
     )
 
     try:
-        if payload.outputFormat == "frames_tar_gz":
+        if output_format == "frames_tar_gz":
             logger.info("threat_map_pipeline_selected job_id=%s pipeline=frames_tar_gz", job_id)
             result = _build_frames_tar_gz_artifact(
                 settings=settings,
@@ -274,7 +289,7 @@ def process_threat_map_job(
         )
         return result
     except ThreatMapResourceLimitError as exc:
-        if payload.outputFormat != "mp4":
+        if output_format != "mp4":
             logger.warning(
                 "threat_map_pipeline_resource_limit job_id=%s pipeline=%s reason_code=%s",
                 job_id,
@@ -570,7 +585,7 @@ def _build_zip_fallback(
 
 def _resolve_required_tiles(geometry: BaseGeometry, settings: Settings) -> list[mercantile.Tile]:
     minx, miny, maxx, maxy = geometry.bounds
-    zoom = settings.landcover_pmtiles_zoom
+    zoom = settings.threat_map_low_resource_zoom if settings.threat_map_low_resource_mode else settings.landcover_pmtiles_zoom
     tiles = list(mercantile.tiles(minx, miny, maxx, maxy, [zoom], truncate=True))
     if not tiles:
         raise ThreatMapError("tile_fetch_failed", "No AOI tiles resolved for frame rendering")
@@ -586,7 +601,7 @@ def _resolve_tiles_for_year(
     started_at: float,
     is_cancelled: Callable[[], bool],
 ) -> dict[mercantile.Tile, np.ndarray]:
-    source_url = _resolve_year_url(settings, year)
+    source_url = _resolve_threat_map_year_url(settings, year)
     logger.info("threat_map_year_tiles_fetch_start year=%s source_url=%s tile_count=%s", year, source_url, len(tiles))
     reader = _build_pmtiles_reader(source_url)
     header = reader.header()
@@ -608,6 +623,22 @@ def _resolve_tiles_for_year(
     if len(decoded) != len(tiles):
         raise ThreatMapError("tile_fetch_failed", f"Not all tiles resolved for year {year}")
     return decoded
+
+
+def _resolve_threat_map_year_url(settings: Settings, year: int) -> str:
+    if year == 1990 and settings.threat_map_landcover_year_1990_url:
+        logger.info("threat_map_year_url_override year=%s url=%s", year, settings.threat_map_landcover_year_1990_url)
+        return settings.threat_map_landcover_year_1990_url
+    if year == 2024 and settings.threat_map_landcover_year_2024_url:
+        logger.info("threat_map_year_url_override year=%s url=%s", year, settings.threat_map_landcover_year_2024_url)
+        return settings.threat_map_landcover_year_2024_url
+
+    resolved = settings.threat_map_landcover_url_template.format(
+        base_url=settings.threat_map_landcover_base_url.rstrip("/"),
+        year=year,
+    )
+    logger.info("threat_map_year_url_template year=%s url=%s", year, resolved)
+    return resolved
 
 
 def _fetch_single_tile_with_retry(reader, tile: mercantile.Tile, settings: Settings, is_cancelled: Callable[[], bool]) -> bytes:
@@ -676,7 +707,6 @@ def _render_year_frame_from_tiles(
         map_max_y_m = max(map_max_y_m, float(bounds_m.top))
 
     legend_entries = _load_legend_entries(settings)
-    class_color_map = _class_color_map(legend_entries)
 
     legend_h = max(72, min(140, int(height * 0.22)))
     map_h = max(1, height - legend_h)
@@ -689,7 +719,7 @@ def _render_year_frame_from_tiles(
         if image is None:
             raise ThreatMapError("tile_fetch_failed", f"Decoded tile missing for year {year}: z/x/y={tile.z}/{tile.x}/{tile.y}")
 
-        rgb = _to_rgb(image, class_color_map)
+        rgb = _to_rgb(image)
         rel_x = tile.x - min_x
         rel_y = tile.y - min_y
 
@@ -796,21 +826,9 @@ def _transform_geometry_between_crs(geom: BaseGeometry, *, source_crs: str, targ
     return transformed
 
 
-def _to_rgb(image: np.ndarray, class_color_map: dict[int, tuple[int, int, int]]) -> np.ndarray:
-    # Some decoded arrays are read-only views; use a writable copy before in-place color remap.
-    rgb = np.array(_to_rgb_raw(image), copy=True)
-    if not class_color_map:
-        return rgb
-
-    class_values = _extract_pmtiles_class_values(image)
-    if class_values is None:
-        return rgb
-
-    for class_code, color in class_color_map.items():
-        mask = class_values == class_code
-        if np.any(mask):
-            rgb[mask] = np.asarray(color, dtype=np.uint8)
-    return rgb
+def _to_rgb(image: np.ndarray) -> np.ndarray:
+    # Threat-map PMTiles are already colorized; preserve source RGB values as-is.
+    return np.array(_to_rgb_raw(image), copy=True)
 
 
 def _to_rgb_raw(image: np.ndarray) -> np.ndarray:
@@ -1008,24 +1026,21 @@ def _parse_hex_color(value: str) -> tuple[int, int, int] | None:
         return None
 
 
-def _class_color_map(entries: list[dict[str, str]]) -> dict[int, tuple[int, int, int]]:
-    output: dict[int, tuple[int, int, int]] = {}
-    for entry in entries:
-        class_code_raw = entry.get("class_code", "")
-        color = _parse_hex_color(entry.get("color", ""))
-        if color is None:
-            continue
-        try:
-            class_code = int(float(class_code_raw))
-        except ValueError:
-            continue
-        output[class_code] = color
-    return output
+def _resolve_repo_path(path_text: str) -> Path:
+    path = Path(path_text)
+    if path.is_absolute() or path.exists():
+        return path
+
+    repo_root = Path(__file__).resolve().parents[2]
+    candidate = repo_root / path
+    if candidate.exists():
+        return candidate
+    return path
 
 
 @lru_cache(maxsize=4)
 def _load_legend_entries_from_path(path_text: str) -> list[dict[str, str]]:
-    path = Path(path_text)
+    path = _resolve_repo_path(path_text)
     if not path.exists():
         return []
     try:
@@ -1053,7 +1068,7 @@ def _load_legend_entries_from_path(path_text: str) -> list[dict[str, str]]:
 
 @lru_cache(maxsize=4)
 def _load_legend_entries_from_qgz_path(path_text: str) -> list[dict[str, str]]:
-    path = Path(path_text)
+    path = _resolve_repo_path(path_text)
     if not path.exists() or path.suffix.lower() != ".qgz":
         return []
 
@@ -1088,19 +1103,67 @@ def _load_legend_entries_from_qgz_path(path_text: str) -> list[dict[str, str]]:
     return entries
 
 
+@lru_cache(maxsize=4)
+def _load_legend_entries_from_mapbiomas_colors_path(path_text: str) -> list[dict[str, str]]:
+    path = _resolve_repo_path(path_text)
+    if not path.exists():
+        return []
+
+    entries: list[dict[str, str]] = []
+    try:
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            comment_index = line.find("#")
+            if comment_index >= 0:
+                line = line[:comment_index].strip()
+            if not line:
+                continue
+
+            tokens = line.split()
+            if len(tokens) < 4:
+                continue
+
+            try:
+                class_code = tokens[0]
+                red = int(tokens[1])
+                green = int(tokens[2])
+                blue = int(tokens[3])
+            except ValueError:
+                continue
+
+            label = raw_line[comment_index + 1 :].strip() if comment_index >= 0 else ""
+            entries.append(
+                {
+                    "class_code": class_code,
+                    "label": label,
+                    "color": f"#{red:02x}{green:02x}{blue:02x}",
+                }
+            )
+    except OSError:
+        return []
+
+    return entries
+
+
 def _load_legend_entries(settings: Settings) -> list[dict[str, str]]:
+    mapbiomas_entries = _load_legend_entries_from_mapbiomas_colors_path(str(settings.threat_map_legend_colors_path))
+    if mapbiomas_entries:
+        return mapbiomas_entries
+
     manifest_entries = _load_legend_entries_from_path(str(settings.threat_map_legend_manifest_path))
     if manifest_entries:
         return manifest_entries
 
     # Fallback for local workflows where the extracted manifest file is absent.
-    repo_root = Path(__file__).resolve().parents[2]
     fallback_candidates = [
-        Path("mekar_raya.qgz"),
-        repo_root / "mekar_raya.qgz",
+        "mekar_raya.qgz",
+        str(Path(__file__).resolve().parents[2] / "mekar_raya.qgz"),
     ]
     for candidate in fallback_candidates:
-        qgz_entries = _load_legend_entries_from_qgz_path(str(candidate))
+        qgz_entries = _load_legend_entries_from_qgz_path(candidate)
         if qgz_entries:
             logger.info("threat_map_legend_fallback_loaded source=%s count=%s", candidate, len(qgz_entries))
             return qgz_entries
