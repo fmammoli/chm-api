@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "purpose": "pmtiles_metadata_discovery_cache",
+  "createdAtEpoch": 1785415461.872658,
+  "elapsedSeconds": 1.322,
+  "cacheRoot": "outputs/pmtiles-range-cache-test",
+  "targets": [
+    {
+      "year": 1990,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/1990_landcover.pmtiles",
+      "urlHash": "ae054d2c4c502ea4",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "network"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 231,
+          "length": 408,
+          "source": "network"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 231,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 2,
+        "disk_cache": 1
+      },
+      "bytesDownloaded": 535,
+      "bytesFromCache": 127
+    },
+    {
+      "year": 1991,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/1991_landcover.pmtiles",
+      "urlHash": "dac62627394c3d7e",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "network"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "network"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 2,
+        "disk_cache": 1
+      },
+      "bytesDownloaded": 535,
+      "bytesFromCache": 127
+    }
+  ],
+  "totals": {
+    "bytesDownloaded": 1070,
+    "bytesFromCache": 254,
+    "uniqueRangesTotal": 4
+  }
+}

@@ -23,12 +23,12 @@ import numpy as np
 from PIL import Image, ImageDraw
 from pyproj import Transformer
 from pydantic import BaseModel, Field
-from shapely.geometry import MultiPolygon, Polygon
+from shapely.geometry import MultiPoint, MultiPolygon, Point, Polygon, mapping, shape
 from shapely.geometry.base import BaseGeometry
-from shapely.ops import transform as shapely_transform
+from shapely.ops import transform as shapely_transform, unary_union
 
 from app.config import Settings
-from app.models import ThreatMapJobCreateRequest, ThreatMapPreset
+from app.models import ThreatMapJobCreateRequest, ThreatMapOverlayLayer, ThreatMapPreset
 from app.services.chm_service import ServiceValidationError, _extract_geometry, _transform_geometry_to_crs, _validate_geometry
 from app.services.landcover_stats_service import (
     _build_pmtiles_reader,
@@ -61,6 +61,30 @@ class RenderOptions:
     crf: int
 
 
+@dataclass(frozen=True)
+class OverlayRenderStyle:
+    stroke_color: tuple[int, int, int]
+    stroke_width: int
+    fill_color: tuple[int, int, int]
+    fill_opacity: float
+    marker_color: tuple[int, int, int]
+    marker_outline_color: tuple[int, int, int]
+    marker_size: int
+    label_color: tuple[int, int, int]
+    label_bg_color: tuple[int, int, int]
+
+
+@dataclass(frozen=True)
+class OverlayRenderLayer:
+    id: str
+    label: str
+    kind: str
+    geometry: BaseGeometry
+    style: OverlayRenderStyle
+    show_in_legend: bool
+    legend_order: int
+
+
 class JobProgressUpdate(BaseModel):
     progress: int = Field(ge=0, le=100)
     message: str | None = None
@@ -69,49 +93,116 @@ class JobProgressUpdate(BaseModel):
 
 def _resolve_overlay_geojson_inputs(
     payload: ThreatMapJobCreateRequest,
-) -> tuple[dict[str, Any], dict[str, Any] | None, str, bool]:
-    """Return primary geojson, overlay geojson, overlay CRS, and extraction flag.
+) -> tuple[dict[str, Any], dict[str, Any] | None, str, dict[str, Any] | None, str | None, str, bool]:
+    """Return normalized AOI/overlay inputs extracted from frontend payload.
 
     If `overlayGeojson` is provided explicitly, it is used as-is.
-    Otherwise, frontend payloads that mix overlay features into `geojson`
-    (marked by `properties.source == "threat-map-overlay"`) are split.
+    If `overlayPointGeojson` is provided explicitly, it is used as-is.
+    Otherwise, frontend payloads that mix extra layers into `geojson` are split
+    into AOI polygon features, overlay polygon features, and point overlays.
     """
 
+    overlay_point_geojson = payload.overlayPointGeojson
+    overlay_point_name = payload.overlayPointName
+    overlay_point_crs = payload.overlayPointCrs
+
     if payload.overlayGeojson is not None:
-        return payload.geojson, payload.overlayGeojson, payload.overlayGeojsonCrs, False
+        return (
+            payload.geojson,
+            payload.overlayGeojson,
+            payload.overlayGeojsonCrs,
+            overlay_point_geojson,
+            overlay_point_name,
+            overlay_point_crs,
+            False,
+        )
 
     geojson = payload.geojson
     if not isinstance(geojson, dict) or geojson.get("type") != "FeatureCollection":
-        return geojson, None, payload.geojsonCrs, False
+        return (
+            geojson,
+            None,
+            payload.geojsonCrs,
+            overlay_point_geojson,
+            overlay_point_name,
+            overlay_point_crs,
+            False,
+        )
 
     features = geojson.get("features")
     if not isinstance(features, list):
-        return geojson, None, payload.geojsonCrs, False
+        return (
+            geojson,
+            None,
+            payload.geojsonCrs,
+            overlay_point_geojson,
+            overlay_point_name,
+            overlay_point_crs,
+            False,
+        )
 
     primary_features: list[Any] = []
     overlay_features: list[Any] = []
+    point_features: list[Any] = []
     for feature in features:
         if not isinstance(feature, dict):
-            primary_features.append(feature)
             continue
         properties = feature.get("properties")
         source = ""
         if isinstance(properties, dict):
             source = str(properties.get("source", "")).strip().lower()
 
-        if source == "threat-map-overlay":
-            overlay_features.append(feature)
-        else:
-            primary_features.append(feature)
+        geometry = feature.get("geometry") if isinstance(feature, dict) else None
+        if not isinstance(geometry, dict):
+            continue
 
-    if not overlay_features or not primary_features:
-        return geojson, None, payload.geojsonCrs, False
+        geom_type = ""
+        geom_type = str(geometry.get("type", "")).strip()
+        is_polygon = geom_type in {"Polygon", "MultiPolygon"}
+        is_point = geom_type in {"Point", "MultiPoint"}
+
+        if source == "threat-map-overlay" and is_polygon:
+            overlay_features.append(feature)
+        elif source in {"threat-map-point", "overlay-point", "threat-map-label-point"} or is_point:
+            point_features.append(feature)
+            if overlay_point_name is None and isinstance(properties, dict):
+                candidate_name = str(properties.get("name", "")).strip()
+                if candidate_name:
+                    overlay_point_name = candidate_name
+        else:
+            if is_polygon:
+                primary_features.append(feature)
+
+    if point_features and overlay_point_geojson is None:
+        overlay_point_geojson = {"type": "FeatureCollection", "features": point_features}
+        # Embedded point features share the same CRS as the parent geojson payload.
+        overlay_point_crs = payload.geojsonCrs
+
+    if not primary_features:
+        if overlay_features or point_features:
+            raise ServiceValidationError(
+                "No AOI polygon found in geojson. Send AOI as Polygon/MultiPolygon and overlays via overlayLayers."
+            )
+        return (
+            geojson,
+            payload.overlayGeojson,
+            payload.overlayGeojsonCrs,
+            overlay_point_geojson,
+            overlay_point_name,
+            overlay_point_crs,
+            bool(overlay_features or point_features),
+        )
+
+    overlay_geojson = {"type": "FeatureCollection", "features": overlay_features} if overlay_features else None
 
     return (
         {"type": "FeatureCollection", "features": primary_features},
-        {"type": "FeatureCollection", "features": overlay_features},
+        overlay_geojson,
         payload.geojsonCrs,
-        True,
+        overlay_point_geojson,
+        overlay_point_name,
+        overlay_point_crs,
+        bool(overlay_features or point_features),
     )
 
 
@@ -139,12 +230,33 @@ def validate_threat_map_request_payload(payload: ThreatMapJobCreateRequest, sett
     if payload.preset == ThreatMapPreset.high and not settings.threat_map_allow_high_preset:
         raise ServiceValidationError("Preset 'high' is currently disabled; use 'balanced'")
 
-    primary_geojson, overlay_geojson, overlay_crs, _ = _resolve_overlay_geojson_inputs(payload)
+    (
+        primary_geojson,
+        overlay_geojson,
+        overlay_crs,
+        overlay_point_geojson,
+        _overlay_point_name,
+        overlay_point_crs,
+        _,
+    ) = _resolve_overlay_geojson_inputs(payload)
 
     _normalize_input_geometry(primary_geojson, payload.geojsonCrs, settings)
 
     if overlay_geojson is not None:
         _normalize_input_geometry(overlay_geojson, overlay_crs, settings)
+
+    if overlay_point_geojson is not None:
+        _normalize_overlay_point_geometry(overlay_point_geojson, overlay_point_crs, settings)
+
+    _build_overlay_layers(
+        payload=payload,
+        settings=settings,
+        legacy_overlay_geojson=overlay_geojson,
+        legacy_overlay_crs=overlay_crs,
+        legacy_overlay_point_geojson=overlay_point_geojson,
+        legacy_overlay_point_name=_overlay_point_name,
+        legacy_overlay_point_crs=overlay_point_crs,
+    )
 
     options = _resolve_render_options(payload, settings)
     return {
@@ -154,8 +266,8 @@ def validate_threat_map_request_payload(payload: ThreatMapJobCreateRequest, sett
 
 
 def _resolve_output_format(requested_format: str, settings: Settings) -> str:
-    if requested_format == "mp4" and not settings.threat_map_enable_server_mp4_generation:
-        logger.info("threat_map_server_mp4_generation_disabled requested_format=mp4 resolved_format=frames_tar_gz")
+    if requested_format == "mp4":
+        logger.info("threat_map_frames_only_requested requested_format=mp4 resolved_format=frames_tar_gz")
         return "frames_tar_gz"
     return requested_format
 
@@ -207,12 +319,26 @@ def process_threat_map_job(
     progress_callback: Callable[[JobProgressUpdate], None],
     is_cancelled: Callable[[], bool],
 ) -> dict:
-    primary_geojson, overlay_geojson, overlay_crs, used_embedded_overlay = _resolve_overlay_geojson_inputs(payload)
+    (
+        primary_geojson,
+        overlay_geojson,
+        overlay_crs,
+        overlay_point_geojson,
+        overlay_point_name,
+        overlay_point_crs,
+        used_embedded_overlay,
+    ) = _resolve_overlay_geojson_inputs(payload)
 
     geometry = _normalize_input_geometry(primary_geojson, payload.geojsonCrs, settings)
-    overlay_geometry: BaseGeometry | None = None
-    if overlay_geojson is not None:
-        overlay_geometry = _normalize_input_geometry(overlay_geojson, overlay_crs, settings)
+    overlay_layers = _build_overlay_layers(
+        payload=payload,
+        settings=settings,
+        legacy_overlay_geojson=overlay_geojson,
+        legacy_overlay_crs=overlay_crs,
+        legacy_overlay_point_geojson=overlay_point_geojson,
+        legacy_overlay_point_name=overlay_point_name,
+        legacy_overlay_point_crs=overlay_point_crs,
+    )
     if used_embedded_overlay:
         logger.info("threat_map_overlay_extracted_from_geojson features_embedded=true")
     options = _resolve_render_options(payload, settings)
@@ -249,7 +375,7 @@ def process_threat_map_job(
             result = _build_frames_tar_gz_artifact(
                 settings=settings,
                 geometry=geometry,
-                overlay_geometry=overlay_geometry,
+                overlay_layers=overlay_layers,
                 options=options,
                 output_tar_gz=output_frames_tar_gz,
                 started_at=started_at,
@@ -271,7 +397,7 @@ def process_threat_map_job(
         result = _encode_mp4(
             settings=settings,
             geometry=geometry,
-            overlay_geometry=overlay_geometry,
+            overlay_layers=overlay_layers,
             options=options,
             output_mp4=output_mp4,
             started_at=started_at,
@@ -303,7 +429,7 @@ def process_threat_map_job(
         result = _build_zip_fallback(
             settings=settings,
             geometry=geometry,
-            overlay_geometry=overlay_geometry,
+            overlay_layers=overlay_layers,
             options=options,
             output_zip=output_zip,
             started_at=started_at,
@@ -329,7 +455,7 @@ def _build_frames_tar_gz_artifact(
     *,
     settings: Settings,
     geometry: BaseGeometry,
-    overlay_geometry: BaseGeometry | None,
+    overlay_layers: list[OverlayRenderLayer],
     options: RenderOptions,
     output_tar_gz: Path,
     started_at: float,
@@ -340,11 +466,17 @@ def _build_frames_tar_gz_artifact(
     output_tar_gz.parent.mkdir(parents=True, exist_ok=True)
     logger.info("threat_map_frames_archive_start path=%s", output_tar_gz)
 
+    legend_entries = _build_overlay_legend_entries(overlay_layers) + _load_legend_entries(settings)
+    legend_height = _compute_legend_band_height(width=options.width, legend_entries=legend_entries)
+    frame_height = options.height + legend_height
+
     metadata = {
         "version": 1,
         "artifactType": "frames_tar_gz",
         "width": options.width,
-        "height": options.height,
+        "height": frame_height,
+        "mapHeight": options.height,
+        "legendHeight": legend_height,
         "fps": options.fps,
         "frameDurationSeconds": options.frame_duration_seconds,
         "yearStart": YEARS[0],
@@ -368,7 +500,7 @@ def _build_frames_tar_gz_artifact(
             frame = _render_year_frame_from_tiles(
                 year=year,
                 geometry=geometry,
-                overlay_geometry=overlay_geometry,
+                overlay_layers=overlay_layers,
                 settings=settings,
                 width=options.width,
                 height=options.height,
@@ -409,7 +541,7 @@ def _encode_mp4(
     *,
     settings: Settings,
     geometry: BaseGeometry,
-    overlay_geometry: BaseGeometry | None,
+    overlay_layers: list[OverlayRenderLayer],
     options: RenderOptions,
     output_mp4: Path,
     started_at: float,
@@ -417,6 +549,9 @@ def _encode_mp4(
     is_cancelled: Callable[[], bool],
 ) -> dict:
     logger.info("threat_map_mp4_encode_start output_path=%s", output_mp4)
+    legend_entries = _build_overlay_legend_entries(overlay_layers) + _load_legend_entries(settings)
+    frame_h = options.height + _compute_legend_band_height(width=options.width, legend_entries=legend_entries)
+
     command = [
         "ffmpeg",
         "-y",
@@ -425,7 +560,7 @@ def _encode_mp4(
         "-pix_fmt",
         "rgb24",
         "-s",
-        f"{options.width}x{options.height}",
+        f"{options.width}x{frame_h}",
         "-r",
         str(options.fps),
         "-i",
@@ -465,7 +600,7 @@ def _encode_mp4(
             frame = _render_year_frame_from_tiles(
                 year=year,
                 geometry=geometry,
-                overlay_geometry=overlay_geometry,
+                overlay_layers=overlay_layers,
                 settings=settings,
                 width=options.width,
                 height=options.height,
@@ -528,7 +663,7 @@ def _build_zip_fallback(
     *,
     settings: Settings,
     geometry: BaseGeometry,
-    overlay_geometry: BaseGeometry | None,
+    overlay_layers: list[OverlayRenderLayer],
     options: RenderOptions,
     output_zip: Path,
     started_at: float,
@@ -547,7 +682,7 @@ def _build_zip_fallback(
             frame = _render_year_frame_from_tiles(
                 year=year,
                 geometry=geometry,
-                overlay_geometry=overlay_geometry,
+                overlay_layers=overlay_layers,
                 settings=settings,
                 width=options.width,
                 height=options.height,
@@ -673,7 +808,7 @@ def _render_year_frame_from_tiles(
     *,
     year: int,
     geometry: BaseGeometry,
-    overlay_geometry: BaseGeometry | None,
+    overlay_layers: list[OverlayRenderLayer],
     settings: Settings,
     width: int,
     height: int,
@@ -689,29 +824,19 @@ def _render_year_frame_from_tiles(
         is_cancelled=is_cancelled,
     )
 
-    min_x = min(tile.x for tile in tiles)
-    min_y = min(tile.y for tile in tiles)
-    max_x = max(tile.x for tile in tiles)
-    max_y = max(tile.y for tile in tiles)
-    tile_span_x = (max_x - min_x) + 1
-    tile_span_y = (max_y - min_y) + 1
-    map_min_x_m = float("inf")
-    map_min_y_m = float("inf")
-    map_max_x_m = float("-inf")
-    map_max_y_m = float("-inf")
-    for tile in tiles:
-        bounds_m = mercantile.xy_bounds(tile)
-        map_min_x_m = min(map_min_x_m, float(bounds_m.left))
-        map_min_y_m = min(map_min_y_m, float(bounds_m.bottom))
-        map_max_x_m = max(map_max_x_m, float(bounds_m.right))
-        map_max_y_m = max(map_max_y_m, float(bounds_m.top))
+    geom_mercator = _transform_geometry_to_crs(geometry, "EPSG:3857")
+    map_min_x_m, map_min_y_m, map_max_x_m, map_max_y_m = geom_mercator.bounds
+    if map_max_x_m <= map_min_x_m or map_max_y_m <= map_min_y_m:
+        raise ThreatMapError("tile_fetch_failed", "AOI bounds are invalid for frame rendering")
 
-    legend_entries = _load_legend_entries(settings)
+    legend_entries = _build_overlay_legend_entries(overlay_layers) + _load_legend_entries(settings)
 
-    legend_h = max(72, min(140, int(height * 0.22)))
-    map_h = max(1, height - legend_h)
+    # Preserve full requested map size; grow the final frame vertically for legend rows.
+    map_h = max(1, height)
+    legend_h = _compute_legend_band_height(width=width, legend_entries=legend_entries)
+    frame_h = map_h + legend_h
 
-    frame = np.zeros((height, width, 3), dtype=np.uint8)
+    frame = np.zeros((frame_h, width, 3), dtype=np.uint8)
 
     for tile in sorted(tiles, key=lambda item: (item.y, item.x)):
         _ensure_not_cancelled(is_cancelled)
@@ -720,25 +845,63 @@ def _render_year_frame_from_tiles(
             raise ThreatMapError("tile_fetch_failed", f"Decoded tile missing for year {year}: z/x/y={tile.z}/{tile.x}/{tile.y}")
 
         rgb = _to_rgb(image)
-        rel_x = tile.x - min_x
-        rel_y = tile.y - min_y
+        tile_bounds = mercantile.xy_bounds(tile)
+        tile_left = float(tile_bounds.left)
+        tile_right = float(tile_bounds.right)
+        tile_bottom = float(tile_bounds.bottom)
+        tile_top = float(tile_bounds.top)
 
-        x0 = int((rel_x * width) / tile_span_x)
-        x1 = int(((rel_x + 1) * width) / tile_span_x)
-        y0 = int((rel_y * map_h) / tile_span_y)
-        y1 = int(((rel_y + 1) * map_h) / tile_span_y)
+        # Clip each tile to AOI bounds to avoid rendering area outside requested extent.
+        clip_left = max(tile_left, map_min_x_m)
+        clip_right = min(tile_right, map_max_x_m)
+        clip_bottom = max(tile_bottom, map_min_y_m)
+        clip_top = min(tile_top, map_max_y_m)
+        if clip_right <= clip_left or clip_top <= clip_bottom:
+            continue
+
+        x0 = int(round(((clip_left - map_min_x_m) / (map_max_x_m - map_min_x_m)) * width))
+        x1 = int(round(((clip_right - map_min_x_m) / (map_max_x_m - map_min_x_m)) * width))
+        y0 = int(round(((map_max_y_m - clip_top) / (map_max_y_m - map_min_y_m)) * map_h))
+        y1 = int(round(((map_max_y_m - clip_bottom) / (map_max_y_m - map_min_y_m)) * map_h))
+        x0 = max(0, min(width, x0))
+        x1 = max(0, min(width, x1))
+        y0 = max(0, min(map_h, y0))
+        y1 = max(0, min(map_h, y1))
         if x1 <= x0:
             x1 = min(width, x0 + 1)
         if y1 <= y0:
-            y1 = min(height, y0 + 1)
+            y1 = min(map_h, y0 + 1)
 
-        tile_img = Image.fromarray(rgb, mode="RGB")
+        tile_h_px, tile_w_px = rgb.shape[0], rgb.shape[1]
+        tile_span_x = tile_right - tile_left
+        tile_span_y = tile_top - tile_bottom
+        if tile_span_x <= 0.0 or tile_span_y <= 0.0:
+            continue
+
+        # Crop the source tile to the clipped mercator span first; resizing the full
+        # tile into a clipped strip causes visible horizontal/vertical squashing.
+        src_x0 = int(np.floor(((clip_left - tile_left) / tile_span_x) * tile_w_px))
+        src_x1 = int(np.ceil(((clip_right - tile_left) / tile_span_x) * tile_w_px))
+        src_y0 = int(np.floor(((tile_top - clip_top) / tile_span_y) * tile_h_px))
+        src_y1 = int(np.ceil(((tile_top - clip_bottom) / tile_span_y) * tile_h_px))
+
+        src_x0 = max(0, min(tile_w_px, src_x0))
+        src_x1 = max(0, min(tile_w_px, src_x1))
+        src_y0 = max(0, min(tile_h_px, src_y0))
+        src_y1 = max(0, min(tile_h_px, src_y1))
+        if src_x1 <= src_x0:
+            src_x1 = min(tile_w_px, src_x0 + 1)
+        if src_y1 <= src_y0:
+            src_y1 = min(tile_h_px, src_y0 + 1)
+
+        src_rgb = rgb[src_y0:src_y1, src_x0:src_x1, :]
+        tile_img = Image.fromarray(src_rgb, mode="RGB")
         tile_resized = np.asarray(tile_img.resize((x1 - x0, y1 - y0), resample=Image.Resampling.NEAREST), dtype=np.uint8)
         frame[y0:y1, x0:x1, :] = tile_resized
 
-    _draw_overlay_geometry(
+    _draw_overlay_layers(
         frame,
-        overlay_geometry=overlay_geometry,
+        overlay_layers=overlay_layers,
         map_h=map_h,
         map_bounds_mercator=(map_min_x_m, map_min_y_m, map_max_x_m, map_max_y_m),
     )
@@ -747,14 +910,367 @@ def _render_year_frame_from_tiles(
     return frame
 
 
-def _draw_overlay_geometry(
+def _build_overlay_layers(
+    *,
+    payload: ThreatMapJobCreateRequest,
+    settings: Settings,
+    legacy_overlay_geojson: dict[str, Any] | None,
+    legacy_overlay_crs: str,
+    legacy_overlay_point_geojson: dict[str, Any] | None,
+    legacy_overlay_point_name: str | None,
+    legacy_overlay_point_crs: str,
+) -> list[OverlayRenderLayer]:
+    layers: list[OverlayRenderLayer] = []
+
+    if legacy_overlay_geojson is not None:
+        geometry = _normalize_input_geometry(legacy_overlay_geojson, legacy_overlay_crs, settings)
+        layers.append(
+            OverlayRenderLayer(
+                id="legacy-overlay",
+                label="Overlay",
+                kind="polygon",
+                geometry=geometry,
+                style=_resolve_overlay_style(None, kind="polygon"),
+                show_in_legend=False,
+                legend_order=1000,
+            )
+        )
+
+    if legacy_overlay_point_geojson is not None:
+        geometry = _normalize_overlay_point_geometry(legacy_overlay_point_geojson, legacy_overlay_point_crs, settings)
+        layers.append(
+            OverlayRenderLayer(
+                id="legacy-point",
+                label=_resolve_overlay_point_name(legacy_overlay_point_name),
+                kind="point",
+                geometry=geometry,
+                style=_resolve_overlay_style(None, kind="point"),
+                show_in_legend=False,
+                legend_order=1001,
+            )
+        )
+
+    if payload.overlayLayers:
+        for raw_layer in payload.overlayLayers:
+            layer = ThreatMapOverlayLayer.model_validate(raw_layer)
+            polygon_geom, point_geom = _extract_overlay_layer_geometry_parts(layer.geojson)
+            if polygon_geom is None and point_geom is None:
+                raise ServiceValidationError("Overlay layer geometry must include point or polygon features")
+
+            label = layer.label.strip() or layer.id
+            show_in_legend = layer.showInLegend
+
+            if polygon_geom is not None:
+                polygon_input = {
+                    "type": "Feature",
+                    "geometry": mapping(polygon_geom),
+                    "properties": {},
+                }
+                geometry = _normalize_input_geometry(polygon_input, layer.geojsonCrs, settings)
+                layers.append(
+                    OverlayRenderLayer(
+                        id=f"{layer.id}::polygon",
+                        label=label,
+                        kind="polygon",
+                        geometry=geometry,
+                        style=_resolve_overlay_style(layer, kind="polygon"),
+                        show_in_legend=show_in_legend,
+                        legend_order=layer.legendOrder,
+                    )
+                )
+                show_in_legend = False
+
+            if point_geom is not None:
+                point_input = {
+                    "type": "Feature",
+                    "geometry": mapping(point_geom),
+                    "properties": {},
+                }
+                geometry = _normalize_overlay_point_geometry(point_input, layer.geojsonCrs, settings)
+                layers.append(
+                    OverlayRenderLayer(
+                        id=f"{layer.id}::point",
+                        label=label,
+                        kind="point",
+                        geometry=geometry,
+                        style=_resolve_overlay_style(layer, kind="point"),
+                        show_in_legend=show_in_legend,
+                        legend_order=layer.legendOrder,
+                    )
+                )
+
+    return layers
+
+
+def _extract_overlay_layer_geometry_parts(geojson_obj: dict[str, Any]) -> tuple[BaseGeometry | None, BaseGeometry | None]:
+    polygon_parts: list[BaseGeometry] = []
+    point_parts: list[BaseGeometry] = []
+
+    def _add_geometry(geometry_obj: dict[str, Any]) -> None:
+        sanitized = _sanitize_overlay_geometry_object(geometry_obj)
+        if sanitized is None:
+            return
+        try:
+            geom = _repair_overlay_geometry(shape(sanitized))
+        except Exception:
+            return
+        polygon_geom, point_geom = _split_overlay_geometry_parts(geom)
+        if polygon_geom is not None:
+            polygon_parts.append(polygon_geom)
+        if point_geom is not None:
+            point_parts.append(point_geom)
+
+    if not isinstance(geojson_obj, dict):
+        return None, None
+
+    geo_type = str(geojson_obj.get("type", "")).strip()
+    if geo_type == "FeatureCollection":
+        features = geojson_obj.get("features", [])
+        for feature in features:
+            if not isinstance(feature, dict):
+                continue
+            geometry = feature.get("geometry")
+            if not isinstance(geometry, dict):
+                continue
+            _add_geometry(geometry)
+    elif geo_type == "Feature":
+        geometry = geojson_obj.get("geometry")
+        if isinstance(geometry, dict):
+            _add_geometry(geometry)
+    else:
+        geometry = geojson_obj.get("geometry") if isinstance(geojson_obj.get("geometry"), dict) else geojson_obj
+        if isinstance(geometry, dict):
+            _add_geometry(geometry)
+
+    polygon_geom: BaseGeometry | None = unary_union(polygon_parts) if polygon_parts else None
+    point_geom: BaseGeometry | None = unary_union(point_parts) if point_parts else None
+    return polygon_geom, point_geom
+
+
+def _sanitize_overlay_geometry_object(geometry_obj: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(geometry_obj, dict):
+        return None
+
+    geom_type = str(geometry_obj.get("type", "")).strip()
+    coordinates = geometry_obj.get("coordinates")
+
+    if geom_type == "Point":
+        point = _sanitize_overlay_coord_pair(coordinates)
+        return {"type": "Point", "coordinates": point} if point is not None else None
+
+    if geom_type == "MultiPoint":
+        if not isinstance(coordinates, list):
+            return None
+        points = [point for point in (_sanitize_overlay_coord_pair(item) for item in coordinates) if point is not None]
+        return {"type": "MultiPoint", "coordinates": points} if points else None
+
+    if geom_type == "Polygon":
+        rings = _sanitize_overlay_polygon_rings(coordinates)
+        return {"type": "Polygon", "coordinates": rings} if rings else None
+
+    if geom_type == "MultiPolygon":
+        if not isinstance(coordinates, list):
+            return None
+        polygons: list[list[list[list[float]]]] = []
+        for polygon_coords in coordinates:
+            rings = _sanitize_overlay_polygon_rings(polygon_coords)
+            if rings:
+                polygons.append(rings)
+        return {"type": "MultiPolygon", "coordinates": polygons} if polygons else None
+
+    if geom_type == "GeometryCollection":
+        raw_geoms = geometry_obj.get("geometries")
+        if not isinstance(raw_geoms, list):
+            return None
+        geoms = [geom for geom in (_sanitize_overlay_geometry_object(item) for item in raw_geoms) if geom is not None]
+        return {"type": "GeometryCollection", "geometries": geoms} if geoms else None
+
+    return None
+
+
+def _sanitize_overlay_polygon_rings(raw_rings: Any) -> list[list[list[float]]]:
+    if not isinstance(raw_rings, list):
+        return []
+
+    sanitized_rings: list[list[list[float]]] = []
+    for raw_ring in raw_rings:
+        ring = _sanitize_overlay_linear_ring(raw_ring)
+        if ring is not None:
+            sanitized_rings.append(ring)
+
+    if not sanitized_rings:
+        return []
+    return sanitized_rings
+
+
+def _sanitize_overlay_linear_ring(raw_ring: Any) -> list[list[float]] | None:
+    if not isinstance(raw_ring, list):
+        return None
+
+    points: list[list[float]] = []
+    for raw_point in raw_ring:
+        point = _sanitize_overlay_coord_pair(raw_point)
+        if point is None:
+            continue
+        if points and points[-1] == point:
+            continue
+        points.append(point)
+
+    if len(points) < 3:
+        return None
+    if points[0] != points[-1]:
+        points.append(points[0])
+    if len(points) < 4:
+        return None
+    return points
+
+
+def _sanitize_overlay_coord_pair(raw_coord: Any) -> list[float] | None:
+    if not isinstance(raw_coord, (list, tuple)) or len(raw_coord) < 2:
+        return None
+    x = _to_finite_float(raw_coord[0])
+    y = _to_finite_float(raw_coord[1])
+    if x is None or y is None:
+        return None
+    return [x, y]
+
+
+def _to_finite_float(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    if not np.isfinite(number):
+        return None
+    return number
+
+
+def _split_overlay_geometry_parts(geom: BaseGeometry) -> tuple[BaseGeometry | None, BaseGeometry | None]:
+    polygon_parts: list[BaseGeometry] = []
+    point_parts: list[BaseGeometry] = []
+
+    def _collect(value: BaseGeometry) -> None:
+        if value.is_empty:
+            return
+        if isinstance(value, Polygon):
+            polygon_parts.append(value)
+            return
+        if isinstance(value, MultiPolygon):
+            polygon_parts.extend(part for part in value.geoms if not part.is_empty)
+            return
+        if isinstance(value, Point):
+            point_parts.append(value)
+            return
+        if isinstance(value, MultiPoint):
+            point_parts.extend(part for part in value.geoms if not part.is_empty)
+            return
+        if hasattr(value, "geoms"):
+            for part in value.geoms:
+                if isinstance(part, BaseGeometry):
+                    _collect(part)
+
+    _collect(geom)
+
+    polygon_geom: BaseGeometry | None = unary_union(polygon_parts) if polygon_parts else None
+    point_geom: BaseGeometry | None = unary_union(point_parts) if point_parts else None
+    return polygon_geom, point_geom
+
+
+def _repair_overlay_geometry(geom: BaseGeometry) -> BaseGeometry:
+    if geom.is_empty:
+        return geom
+
+    try:
+        repaired = geom.buffer(0)
+    except Exception:
+        return geom
+
+    if repaired.is_empty:
+        return geom
+    return repaired
+
+
+def _resolve_overlay_geometry_kind(geom: BaseGeometry) -> str:
+    if isinstance(geom, (Point, MultiPoint)):
+        return "point"
+    if isinstance(geom, (Polygon, MultiPolygon)):
+        return "polygon"
+
+    if hasattr(geom, "geoms"):
+        parts = list(getattr(geom, "geoms", []))
+        point_like = any(isinstance(part, (Point, MultiPoint)) for part in parts)
+        polygon_like = any(isinstance(part, (Polygon, MultiPolygon)) for part in parts)
+        if point_like and not polygon_like:
+            return "point"
+        if polygon_like and not point_like:
+            return "polygon"
+
+    raise ServiceValidationError("Overlay layer geometry must be point or polygon")
+
+
+def _resolve_overlay_style(layer: ThreatMapOverlayLayer | None, *, kind: str) -> OverlayRenderStyle:
+    stroke_default = (255, 242, 0) if kind == "polygon" else (255, 78, 78)
+    fill_default = stroke_default
+    marker_default = (255, 78, 78)
+
+    style = layer.style if layer is not None else None
+
+    stroke = _resolve_color_value(style.strokeColor if style else None, stroke_default)
+    fill = _resolve_color_value(style.fillColor if style else None, fill_default)
+    marker = _resolve_color_value(style.markerColor if style else None, marker_default)
+    marker_outline = _resolve_color_value(style.markerOutlineColor if style else None, (255, 255, 255))
+    label_color = _resolve_color_value(style.labelColor if style else None, (33, 39, 48))
+    label_bg = _resolve_color_value(style.labelBgColor if style else None, (255, 255, 255))
+
+    return OverlayRenderStyle(
+        stroke_color=stroke,
+        stroke_width=(style.strokeWidth if style and style.strokeWidth is not None else 2),
+        fill_color=fill,
+        fill_opacity=(style.fillOpacity if style and style.fillOpacity is not None else 0.15),
+        marker_color=marker,
+        marker_outline_color=marker_outline,
+        marker_size=(style.markerSize if style and style.markerSize is not None else 8),
+        label_color=label_color,
+        label_bg_color=label_bg,
+    )
+
+
+def _resolve_color_value(raw: str | None, default: tuple[int, int, int]) -> tuple[int, int, int]:
+    if raw is None:
+        return default
+    parsed = _parse_hex_color(raw)
+    if parsed is None:
+        raise ServiceValidationError(f"Invalid hex color: {raw}")
+    return parsed
+
+
+def _build_overlay_legend_entries(overlay_layers: list[OverlayRenderLayer]) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
+    sorted_layers = sorted(overlay_layers, key=lambda item: (item.legend_order, item.label.lower(), item.id))
+    for layer in sorted_layers:
+        if not layer.show_in_legend:
+            continue
+        color = layer.style.marker_color if layer.kind == "point" else layer.style.stroke_color
+        class_code = "PT" if layer.kind == "point" else "OVL"
+        entries.append(
+            {
+                "class_code": class_code,
+                "label": layer.label,
+                "color": f"#{color[0]:02x}{color[1]:02x}{color[2]:02x}",
+            }
+        )
+    return entries
+
+
+def _draw_overlay_layers(
     frame: np.ndarray,
     *,
-    overlay_geometry: BaseGeometry | None,
+    overlay_layers: list[OverlayRenderLayer],
     map_h: int,
     map_bounds_mercator: tuple[float, float, float, float],
 ) -> None:
-    if overlay_geometry is None:
+    if not overlay_layers:
         return
 
     map_min_x, map_min_y, map_max_x, map_max_y = map_bounds_mercator
@@ -763,26 +1279,50 @@ def _draw_overlay_geometry(
     if map_max_x <= map_min_x or map_max_y <= map_min_y:
         return
 
-    overlay_mercator = _transform_geometry_to_crs(overlay_geometry, "EPSG:3857")
-    if overlay_mercator.is_empty:
-        return
-
     height, width, _ = frame.shape
-    image = Image.fromarray(frame, mode="RGB")
-    draw = ImageDraw.Draw(image)
-
-    line_width = max(2, width // 320)
-    line_color = (255, 242, 0)
+    base_image = Image.fromarray(frame, mode="RGB")
 
     def _to_pixel(x_m: float, y_m: float) -> tuple[int, int]:
         px = int(round(((x_m - map_min_x) / (map_max_x - map_min_x)) * (width - 1)))
         py = int(round(((map_max_y - y_m) / (map_max_y - map_min_y)) * max(0, map_h - 1)))
         return px, py
 
-    def _draw_ring(coords) -> None:
-        points = [_to_pixel(float(x), float(y)) for x, y in coords]
-        if len(points) >= 2:
-            draw.line(points + [points[0]], fill=line_color, width=line_width)
+    overlay_rgba = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    overlay_draw = ImageDraw.Draw(overlay_rgba, "RGBA")
+    label_draw = ImageDraw.Draw(base_image)
+
+    sorted_layers = sorted(overlay_layers, key=lambda item: (item.legend_order, item.id))
+    for layer in sorted_layers:
+        if layer.kind == "polygon":
+            _draw_overlay_polygon_layer(
+                overlay_draw,
+                layer=layer,
+                map_h=map_h,
+                to_pixel=_to_pixel,
+            )
+        elif layer.kind == "point":
+            _draw_overlay_point_layer(
+                base_image,
+                label_draw,
+                layer=layer,
+                map_h=map_h,
+                map_bounds_mercator=map_bounds_mercator,
+            )
+
+    composed = Image.alpha_composite(base_image.convert("RGBA"), overlay_rgba).convert("RGB")
+    frame[:, :, :] = np.asarray(composed, dtype=np.uint8)
+
+
+def _draw_overlay_polygon_layer(
+    overlay_draw: ImageDraw.ImageDraw,
+    *,
+    layer: OverlayRenderLayer,
+    map_h: int,
+    to_pixel: Callable[[float, float], tuple[int, int]],
+) -> None:
+    overlay_mercator = _transform_geometry_to_crs(layer.geometry, "EPSG:3857")
+    if overlay_mercator.is_empty:
+        return
 
     polygons: list[Polygon] = []
     if isinstance(overlay_mercator, Polygon):
@@ -792,12 +1332,126 @@ def _draw_overlay_geometry(
     elif hasattr(overlay_mercator, "geoms"):
         polygons = [geom for geom in overlay_mercator.geoms if isinstance(geom, Polygon)]
 
-    for polygon in polygons:
-        _draw_ring(polygon.exterior.coords)
-        for interior in polygon.interiors:
-            _draw_ring(interior.coords)
+    fill_rgba = (
+        layer.style.fill_color[0],
+        layer.style.fill_color[1],
+        layer.style.fill_color[2],
+        int(round(max(0.0, min(layer.style.fill_opacity, 1.0)) * 255)),
+    )
+    stroke_rgba = (
+        layer.style.stroke_color[0],
+        layer.style.stroke_color[1],
+        layer.style.stroke_color[2],
+        255,
+    )
 
-    frame[:, :, :] = np.asarray(image, dtype=np.uint8)
+    for polygon in polygons:
+        outer = [to_pixel(float(x), float(y)) for x, y in polygon.exterior.coords]
+        if len(outer) >= 3:
+            overlay_draw.polygon(outer, fill=fill_rgba, outline=stroke_rgba)
+            if layer.style.stroke_width > 1:
+                overlay_draw.line(outer + [outer[0]], fill=stroke_rgba, width=layer.style.stroke_width)
+
+        for interior in polygon.interiors:
+            inner = [to_pixel(float(x), float(y)) for x, y in interior.coords]
+            if len(inner) >= 3:
+                overlay_draw.polygon(inner, fill=(0, 0, 0, 0), outline=(0, 0, 0, 0))
+
+
+def _draw_overlay_point_layer(
+    image: Image.Image,
+    label_draw: ImageDraw.ImageDraw,
+    *,
+    layer: OverlayRenderLayer,
+    map_h: int,
+    map_bounds_mercator: tuple[float, float, float, float],
+) -> None:
+    point_mercator = _transform_geometry_to_crs(layer.geometry, "EPSG:3857")
+    if not isinstance(point_mercator, Point) or point_mercator.is_empty:
+        return
+
+    map_min_x, map_min_y, map_max_x, map_max_y = map_bounds_mercator
+    if map_max_x <= map_min_x or map_max_y <= map_min_y:
+        return
+
+    width, _height = image.size
+    point_x = int(round(((float(point_mercator.x) - map_min_x) / (map_max_x - map_min_x)) * (width - 1)))
+    point_y = int(round(((map_max_y - float(point_mercator.y)) / (map_max_y - map_min_y)) * max(0, map_h - 1)))
+
+    if point_x < 0 or point_x >= width or point_y < 0 or point_y >= map_h:
+        return
+
+    marker_radius = max(3, layer.style.marker_size)
+    label_draw.ellipse(
+        [point_x - marker_radius, point_y - marker_radius, point_x + marker_radius, point_y + marker_radius],
+        fill=layer.style.marker_color,
+        outline=layer.style.marker_outline_color,
+        width=max(1, marker_radius // 3),
+    )
+
+    label = _truncate(layer.label or "Point", 40)
+    label_pad_x = 8
+    label_pad_y = 4
+    label_w, label_h = _measure_text(label_draw, label)
+    bubble_w = label_w + (label_pad_x * 2)
+    bubble_h = label_h + (label_pad_y * 2)
+
+    label_x = min(max(0, point_x + marker_radius + 8), max(0, width - bubble_w - 2))
+    label_y = point_y - bubble_h - 8
+    if label_y < 0:
+        label_y = min(map_h - bubble_h - 2, point_y + marker_radius + 8)
+    label_y = max(0, min(label_y, max(0, map_h - bubble_h - 2)))
+
+    label_draw.rounded_rectangle(
+        [label_x, label_y, label_x + bubble_w, label_y + bubble_h],
+        radius=max(4, bubble_h // 3),
+        fill=layer.style.label_bg_color,
+        outline=layer.style.marker_color,
+        width=1,
+    )
+    label_draw.text((label_x + label_pad_x, label_y + label_pad_y), label, fill=layer.style.label_color)
+
+
+def _draw_overlay_geometry(
+    frame: np.ndarray,
+    *,
+    overlay_geometry: BaseGeometry | None,
+    overlay_point_geometry: BaseGeometry | None,
+    overlay_point_name: str | None,
+    map_h: int,
+    map_bounds_mercator: tuple[float, float, float, float],
+) -> None:
+    layers: list[OverlayRenderLayer] = []
+    if overlay_geometry is not None:
+        layers.append(
+            OverlayRenderLayer(
+                id="compat-overlay",
+                label="Overlay",
+                kind="polygon",
+                geometry=overlay_geometry,
+                style=_resolve_overlay_style(None, kind="polygon"),
+                show_in_legend=False,
+                legend_order=1000,
+            )
+        )
+    if overlay_point_geometry is not None:
+        layers.append(
+            OverlayRenderLayer(
+                id="compat-point",
+                label=_resolve_overlay_point_name(overlay_point_name),
+                kind="point",
+                geometry=overlay_point_geometry,
+                style=_resolve_overlay_style(None, kind="point"),
+                show_in_legend=False,
+                legend_order=1001,
+            )
+        )
+    _draw_overlay_layers(
+        frame,
+        overlay_layers=layers,
+        map_h=map_h,
+        map_bounds_mercator=map_bounds_mercator,
+    )
 
 
 def _normalize_input_geometry(geojson_obj: dict, source_crs: str, settings: Settings) -> BaseGeometry:
@@ -811,6 +1465,42 @@ def _normalize_input_geometry(geojson_obj: dict, source_crs: str, settings: Sett
 
     _validate_geometry(geom, settings)
     return geom
+
+
+def _normalize_overlay_point_geometry(geojson_obj: dict, source_crs: str, settings: Settings) -> BaseGeometry:
+    geom = _extract_geometry(geojson_obj)
+    if isinstance(geom, MultiPoint):
+        if len(geom.geoms) == 0:
+            raise ServiceValidationError("Overlay point is empty")
+        geom = geom.geoms[0]
+    elif hasattr(geom, "geoms") and not isinstance(geom, Point):
+        point_candidates = [part for part in geom.geoms if isinstance(part, Point)]
+        if point_candidates:
+            geom = point_candidates[0]
+
+    if not isinstance(geom, Point):
+        raise ServiceValidationError("Overlay point must be a Point geometry")
+
+    source = source_crs.upper()
+    if source not in {"EPSG:4326", "EPSG:3857"}:
+        raise ServiceValidationError(f"Unsupported CRS: {source_crs}")
+
+    if source == "EPSG:3857":
+        geom = _transform_geometry_between_crs(geom, source_crs="EPSG:3857", target_crs="EPSG:4326")
+
+    if geom.is_empty:
+        raise ServiceValidationError("Overlay point is empty")
+
+    # Reuse the existing spatial guardrails to keep the point inside the service coverage area.
+    _validate_geometry(geom.buffer(1e-9).envelope, settings)
+    return geom
+
+
+def _resolve_overlay_point_name(value: str | None) -> str:
+    if value is None:
+        return "Point"
+    cleaned = value.strip()
+    return cleaned or "Point"
 
 
 def _transform_geometry_between_crs(geom: BaseGeometry, *, source_crs: str, target_crs: str) -> BaseGeometry:
@@ -870,9 +1560,9 @@ def _draw_legend_band(frame: np.ndarray, *, year: int, legend_entries: list[dict
 
     outer_pad = max(8, width // 96)
     panel_x0 = outer_pad
-    panel_y0 = map_h + max(6, band_h // 16)
+    panel_y0 = map_h + 8
     panel_x1 = width - outer_pad
-    panel_y1 = height - max(6, band_h // 16)
+    panel_y1 = height - 8
 
     if panel_x1 - panel_x0 < 40 or panel_y1 - panel_y0 < 24:
         frame[:, :, :] = np.asarray(image, dtype=np.uint8)
@@ -888,49 +1578,31 @@ def _draw_legend_band(frame: np.ndarray, *, year: int, legend_entries: list[dict
 
     header_pad_x = panel_x0 + 12
     header_y = panel_y0 + 8
-    draw.text((header_pad_x, header_y), "Landcover Legend", fill=(32, 42, 54))
 
+    # Keep year prominent but neutral for better readability in shared frames.
     year_text = f"Year {year}"
-    year_w, year_h = _measure_text(draw, year_text)
-    badge_pad_x = 8
-    badge_pad_y = 3
-    badge_h = year_h + (badge_pad_y * 2)
-    badge_w = year_w + (badge_pad_x * 2)
-    badge_x1 = panel_x1 - 12
-    badge_x0 = badge_x1 - badge_w
-    badge_y0 = header_y - 1
-    badge_y1 = badge_y0 + badge_h
-    if badge_x0 > header_pad_x + 90:
-        draw.rounded_rectangle(
-            [badge_x0, badge_y0, badge_x1, badge_y1],
-            radius=8,
-            fill=(236, 242, 249),
-            outline=(171, 183, 198),
-            width=1,
-        )
-        draw.text((badge_x0 + badge_pad_x, badge_y0 + badge_pad_y), year_text, fill=(38, 50, 65))
+    title_text = "Landcover Legend"
+    title_h = _measure_text(draw, title_text)[1]
+    year_h = _measure_text(draw, year_text)[1]
+    header_h = max(title_h, year_h)
 
-    section_y = header_y + year_h + 7
+    draw.text((header_pad_x, header_y), title_text, fill=(32, 44, 58))
+    year_w, _ = _measure_text(draw, year_text)
+    year_x = max(header_pad_x, panel_x1 - 12 - year_w)
+    draw.text((year_x, header_y), year_text, fill=(24, 37, 52))
+
+    section_y = header_y + header_h + 7
     draw.line([(panel_x0 + 10, section_y), (panel_x1 - 10, section_y)], fill=(191, 201, 214), width=1)
 
     content_x0 = panel_x0 + 10
     content_x1 = panel_x1 - 10
     content_y0 = section_y + 8
-    row_h = 20
-    swatch = 12
+    row_h = 24
+    swatch = 14
     gutter_x = 8
     label_pad = 6
 
-    valid_entries: list[tuple[str, str, tuple[int, int, int]]] = []
-    for entry in legend_entries:
-        color = _parse_hex_color(entry.get("color", ""))
-        if color is None:
-            continue
-        class_code = entry.get("class_code", "").strip()
-        label = entry.get("label", "").strip()
-        if not class_code and not label:
-            continue
-        valid_entries.append((class_code, label, color))
+    valid_entries = _collect_valid_legend_entries(legend_entries)
 
     if not valid_entries:
         draw.text((content_x0, content_y0), "No legend entries available", fill=(111, 123, 138))
@@ -938,23 +1610,16 @@ def _draw_legend_band(frame: np.ndarray, *, year: int, legend_entries: list[dict
         return
 
     available_w = max(1, content_x1 - content_x0)
-    col_target_w = 220
-    col_count = max(1, min(4, available_w // col_target_w))
-    col_count = min(col_count, len(valid_entries))
-    col_count = max(1, col_count)
+    col_count = 2 if len(valid_entries) >= 2 else 1
 
-    col_w = max(120, (available_w - ((col_count - 1) * gutter_x)) // col_count)
-    max_rows = max(1, (panel_y1 - content_y0 - 6) // row_h)
-    capacity = max_rows * col_count
-    hidden_count = max(0, len(valid_entries) - capacity)
-
-    for idx, (class_code, label, color) in enumerate(valid_entries[:capacity]):
+    col_w = max(160, (available_w - ((col_count - 1) * gutter_x)) // col_count)
+    for idx, (class_code, label, color) in enumerate(valid_entries):
         row = idx // col_count
         col = idx % col_count
         item_x = content_x0 + (col * (col_w + gutter_x))
         item_y = content_y0 + (row * row_h)
 
-        swatch_y0 = item_y + 4
+        swatch_y0 = item_y + ((row_h - swatch) // 2)
         swatch_x0 = item_x
         swatch_x1 = swatch_x0 + swatch
         swatch_y1 = swatch_y0 + swatch
@@ -976,16 +1641,37 @@ def _draw_legend_band(frame: np.ndarray, *, year: int, legend_entries: list[dict
         text_x = swatch_x1 + label_pad
         max_text_w = max(24, col_w - (swatch + label_pad + 2))
         clipped = _truncate_to_width(draw, text, max_text_w)
-        draw.text((text_x, item_y + 3), clipped, fill=(41, 53, 67))
-
-    if hidden_count > 0:
-        more_text = f"+{hidden_count} more classes"
-        more_w, more_h = _measure_text(draw, more_text)
-        more_x = panel_x1 - 12 - more_w
-        more_y = max(content_y0, panel_y1 - more_h - 6)
-        draw.text((more_x, more_y), more_text, fill=(95, 108, 124))
+        draw.text((text_x, item_y + 4), clipped, fill=(41, 53, 67))
 
     frame[:, :, :] = np.asarray(image, dtype=np.uint8)
+
+
+def _compute_legend_band_height(*, width: int, legend_entries: list[dict[str, str]]) -> int:
+    valid_entries = _collect_valid_legend_entries(legend_entries)
+    if not valid_entries:
+        return 90
+
+    col_count = 2 if len(valid_entries) >= 2 else 1
+
+    row_h = 24
+    rows = (len(valid_entries) + col_count - 1) // col_count
+
+    # 84px accounts for header, separators, and panel paddings; rows add vertical scale.
+    return max(100, 84 + (rows * row_h))
+
+
+def _collect_valid_legend_entries(legend_entries: list[dict[str, str]]) -> list[tuple[str, str, tuple[int, int, int]]]:
+    valid_entries: list[tuple[str, str, tuple[int, int, int]]] = []
+    for entry in legend_entries:
+        color = _parse_hex_color(entry.get("color", ""))
+        if color is None:
+            continue
+        class_code = entry.get("class_code", "").strip()
+        label = entry.get("label", "").strip()
+        if not class_code and not label:
+            continue
+        valid_entries.append((class_code, label, color))
+    return valid_entries
 
 
 def _measure_text(draw: ImageDraw.ImageDraw, value: str) -> tuple[int, int]:

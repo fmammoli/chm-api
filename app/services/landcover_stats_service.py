@@ -3,10 +3,14 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import gzip
+import hashlib
 from io import BytesIO
 import json
 import logging
+import os
+from pathlib import Path
 from threading import Lock
+import tempfile
 import time
 from typing import Callable
 
@@ -475,6 +479,8 @@ def _build_pmtiles_reader(url: str) -> pm_reader.Reader:
     session = requests.Session()
     lock = Lock()
     cache: dict[tuple[int, int], bytes] = {}
+    cache_root = _resolve_pmtiles_range_cache_root()
+    url_cache_dir = _pmtiles_range_cache_dir(cache_root, url)
 
     def get_bytes(offset: int, length: int) -> bytes:
         key = (offset, length)
@@ -482,6 +488,14 @@ def _build_pmtiles_reader(url: str) -> pm_reader.Reader:
             cached = cache.get(key)
         if cached is not None:
             return cached
+
+        if url_cache_dir is not None:
+            cached_path = url_cache_dir / f"{offset}_{length}.bin"
+            disk_payload = _read_pmtiles_range_cache(cached_path, length)
+            if disk_payload is not None:
+                with lock:
+                    cache[key] = disk_payload
+                return disk_payload
 
         headers = {"Range": f"bytes={offset}-{offset + length - 1}"}
         response = session.get(url, headers=headers, timeout=60)
@@ -494,9 +508,60 @@ def _build_pmtiles_reader(url: str) -> pm_reader.Reader:
 
         with lock:
             cache[key] = payload
+        if url_cache_dir is not None:
+            _write_pmtiles_range_cache(url_cache_dir / f"{offset}_{length}.bin", payload)
         return payload
 
     return pm_reader.Reader(get_bytes)
+
+
+def _resolve_pmtiles_range_cache_root() -> Path | None:
+    raw_dir = os.getenv("PMTILES_RANGE_CACHE_DIR", "").strip()
+    if not raw_dir:
+        return None
+
+    root = Path(raw_dir)
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        logger.warning("pmtiles_range_cache_unavailable path=%s", root)
+        return None
+    return root
+
+
+def _pmtiles_range_cache_dir(cache_root: Path | None, url: str) -> Path | None:
+    if cache_root is None:
+        return None
+    url_hash = hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
+    path = cache_root / "ranges" / url_hash
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        logger.warning("pmtiles_range_cache_unavailable path=%s", path)
+        return None
+    return path
+
+
+def _read_pmtiles_range_cache(path: Path, expected_length: int) -> bytes | None:
+    try:
+        payload = path.read_bytes()
+    except OSError:
+        return None
+    if len(payload) != expected_length:
+        return None
+    return payload
+
+
+def _write_pmtiles_range_cache(path: Path, payload: bytes) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(delete=False, dir=str(path.parent)) as tmp_file:
+            tmp_file.write(payload)
+            tmp_path = Path(tmp_file.name)
+        tmp_path.replace(path)
+    except OSError:
+        # Best-effort cache write; request path should continue without failing.
+        return
 
 
 def _process_pmtiles_tile(

@@ -1,0 +1,1869 @@
+{
+  "version": 1,
+  "purpose": "pmtiles_metadata_discovery_cache",
+  "createdAtEpoch": 1785415571.1966238,
+  "elapsedSeconds": 0.003,
+  "cacheRoot": "outputs/pmtiles-metadata-cache",
+  "targets": [
+    {
+      "year": 1990,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/1990_landcover.pmtiles",
+      "urlHash": "ae054d2c4c502ea4",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 231,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 231,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 1991,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/1991_landcover.pmtiles",
+      "urlHash": "dac62627394c3d7e",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 1992,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/1992_landcover.pmtiles",
+      "urlHash": "961676fd79ac2b27",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 1993,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/1993_landcover.pmtiles",
+      "urlHash": "3109c9c9c8c15945",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 1994,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/1994_landcover.pmtiles",
+      "urlHash": "8b362b1f594ee550",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 1995,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/1995_landcover.pmtiles",
+      "urlHash": "1f7783883133d8c9",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 1996,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/1996_landcover.pmtiles",
+      "urlHash": "79dc92b12bf0de64",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 231,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 231,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 1997,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/1997_landcover.pmtiles",
+      "urlHash": "11dbec7d24462810",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 1998,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/1998_landcover.pmtiles",
+      "urlHash": "dde2c3b46675a191",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 1999,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/1999_landcover.pmtiles",
+      "urlHash": "5416257905ffea4d",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 231,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 231,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2000,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2000_landcover.pmtiles",
+      "urlHash": "5c44b7c2d073b02f",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 231,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 231,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2001,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2001_landcover.pmtiles",
+      "urlHash": "d6dc4a55a9c0a44b",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2002,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2002_landcover.pmtiles",
+      "urlHash": "2147462346a107d4",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2003,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2003_landcover.pmtiles",
+      "urlHash": "278bd2ed9191a798",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2004,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2004_landcover.pmtiles",
+      "urlHash": "80f76cf2bab6ad34",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2005,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2005_landcover.pmtiles",
+      "urlHash": "69224db2f091c743",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2006,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2006_landcover.pmtiles",
+      "urlHash": "2f7a69827a40ce4e",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2007,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2007_landcover.pmtiles",
+      "urlHash": "64d91077bb0906b9",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2008,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2008_landcover.pmtiles",
+      "urlHash": "cfc19eb67ca972ab",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2009,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2009_landcover.pmtiles",
+      "urlHash": "308bcd5b3b996760",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2010,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2010_landcover.pmtiles",
+      "urlHash": "de7b5c3308ea0a07",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2011,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2011_landcover.pmtiles",
+      "urlHash": "c0c0f64296ae5fe0",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2012,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2012_landcover.pmtiles",
+      "urlHash": "c8d55c71392a3016",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2013,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2013_landcover.pmtiles",
+      "urlHash": "20c1aee59624b2ac",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2014,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2014_landcover.pmtiles",
+      "urlHash": "5c0fe18abbcc2542",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2015,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2015_landcover.pmtiles",
+      "urlHash": "d5a1cee541956960",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2016,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2016_landcover.pmtiles",
+      "urlHash": "abefb28987ac6757",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2017,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2017_landcover.pmtiles",
+      "urlHash": "54aec4762d60fe7e",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2018,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2018_landcover.pmtiles",
+      "urlHash": "b5371d48e0098bb8",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2019,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2019_landcover.pmtiles",
+      "urlHash": "8ef002fb2bb99872",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2020,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2020_landcover.pmtiles",
+      "urlHash": "6c34d3e460e9ee4a",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2021,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2021_landcover.pmtiles",
+      "urlHash": "5136beff252d1db9",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2022,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2022_landcover.pmtiles",
+      "urlHash": "dc1eb01a7c335d23",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2023,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2023_landcover.pmtiles",
+      "urlHash": "3b375b6aa49ad1ff",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    },
+    {
+      "year": 2024,
+      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/2024_landcover.pmtiles",
+      "urlHash": "4df1abd6ef01cf9b",
+      "pmtiles": {
+        "minZoom": 0,
+        "maxZoom": 12,
+        "tileType": "PNG"
+      },
+      "metadataKeys": [
+        "bounds",
+        "center",
+        "description",
+        "format",
+        "maxzoom",
+        "minzoom",
+        "name",
+        "type"
+      ],
+      "rangeEvents": [
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 0,
+          "length": 127,
+          "source": "disk_cache"
+        },
+        {
+          "offset": 230,
+          "length": 408,
+          "source": "disk_cache"
+        }
+      ],
+      "uniqueRanges": [
+        {
+          "offset": 0,
+          "length": 127
+        },
+        {
+          "offset": 230,
+          "length": 408
+        }
+      ],
+      "rangeEventCounts": {
+        "network": 0,
+        "disk_cache": 3
+      },
+      "bytesDownloaded": 0,
+      "bytesFromCache": 662
+    }
+  ],
+  "totals": {
+    "bytesDownloaded": 0,
+    "bytesFromCache": 23170,
+    "uniqueRangesTotal": 70
+  }
+}

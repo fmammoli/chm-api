@@ -11,6 +11,7 @@ import pytest
 
 from app.config import Settings
 from app.models import ThreatMapJobCreateRequest
+from app.services.chm_service import ServiceValidationError
 from app.services.threat_map_service import (
     RenderOptions,
     ThreatMapResourceLimitError,
@@ -82,7 +83,7 @@ def test_zip_fallback_contains_first_and_last_year(monkeypatch, tmp_path: Path):
     result = _build_zip_fallback(
         settings=settings,
         geometry=type("Geom", (), {"bounds": (106.7, -6.4, 107.0, -6.1)})(),
-        overlay_geometry=None,
+        overlay_layers=[],
         options=RenderOptions(
             width=8,
             height=8,
@@ -111,16 +112,16 @@ def test_year_span_invariant():
     assert YEARS[-1] == 2024
 
 
-def test_resolve_output_format_forces_frames_archive_when_server_mp4_generation_disabled():
+def test_resolve_output_format_forces_frames_archive_when_mp4_requested_and_server_mp4_generation_disabled():
     settings = Settings(threat_map_enable_server_mp4_generation=False)
 
     assert _resolve_output_format("mp4", settings) == "frames_tar_gz"
 
 
-def test_resolve_output_format_keeps_mp4_when_enabled():
+def test_resolve_output_format_forces_frames_archive_when_mp4_requested_and_server_mp4_generation_enabled():
     settings = Settings(threat_map_enable_server_mp4_generation=True)
 
-    assert _resolve_output_format("mp4", settings) == "mp4"
+    assert _resolve_output_format("mp4", settings) == "frames_tar_gz"
 
 
 def test_to_rgb_preserves_baked_pmtiles_colors():
@@ -259,13 +260,53 @@ def test_resolve_overlay_geojson_inputs_splits_embedded_overlay_features() -> No
         geojsonCrs="EPSG:4326",
     )
 
-    primary, overlay, overlay_crs, extracted = _resolve_overlay_geojson_inputs(payload)
+    primary, overlay, overlay_crs, overlay_point, overlay_point_name, overlay_point_crs, extracted = _resolve_overlay_geojson_inputs(payload)
 
     assert extracted is True
     assert overlay is not None
     assert overlay_crs == "EPSG:4326"
+    assert overlay_point is None
+    assert overlay_point_name is None
+    assert overlay_point_crs == "EPSG:3857"
     assert len(primary["features"]) == 1
     assert len(overlay["features"]) == 1
+
+
+def test_resolve_overlay_geojson_inputs_extracts_embedded_point_layer() -> None:
+    payload = ThreatMapJobCreateRequest(
+        geojson={
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {"source": "threat-map-square"},
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[106.7, -6.4], [107.0, -6.4], [107.0, -6.1], [106.7, -6.1], [106.7, -6.4]]],
+                    },
+                },
+                {
+                    "type": "Feature",
+                    "properties": {"source": "threat-map-point", "name": "Camp A"},
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [106.84, -6.26],
+                    },
+                },
+            ],
+        },
+        geojsonCrs="EPSG:4326",
+    )
+
+    primary, overlay, overlay_crs, overlay_point, overlay_point_name, overlay_point_crs, extracted = _resolve_overlay_geojson_inputs(payload)
+
+    assert extracted is True
+    assert overlay is None
+    assert overlay_crs == "EPSG:4326"
+    assert overlay_point is not None
+    assert overlay_point_name == "Camp A"
+    assert overlay_point_crs == "EPSG:4326"
+    assert len(primary["features"]) == 1
 
 
 def test_validate_accepts_overlay_embedded_in_geojson() -> None:
@@ -404,6 +445,217 @@ def test_validate_accepts_overlay_geojson() -> None:
     assert "options" in validated
 
 
+def test_validate_accepts_named_overlay_point() -> None:
+    settings = Settings()
+    payload = ThreatMapJobCreateRequest(
+        geojson={
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [106.7, -6.4],
+                                [107.0, -6.4],
+                                [107.0, -6.1],
+                                [106.7, -6.1],
+                                [106.7, -6.4],
+                            ]
+                        ],
+                    },
+                    "properties": {},
+                }
+            ],
+        },
+        geojsonCrs="EPSG:4326",
+        overlayPointGeojson={
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [106.84, -6.26]},
+            "properties": {},
+        },
+        overlayPointName="Sampling point",
+        overlayPointCrs="EPSG:4326",
+    )
+
+    validated = validate_threat_map_request_payload(payload, settings)
+    assert "options" in validated
+
+
+def test_validate_accepts_styled_overlay_layers() -> None:
+    settings = Settings()
+    payload = ThreatMapJobCreateRequest(
+        geojson={
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [106.7, -6.4],
+                                [107.0, -6.4],
+                                [107.0, -6.1],
+                                [106.7, -6.1],
+                                [106.7, -6.4],
+                            ]
+                        ],
+                    },
+                    "properties": {},
+                }
+            ],
+        },
+        geojsonCrs="EPSG:4326",
+        overlayLayers=[
+            {
+                "id": "wood-fiber",
+                "label": "Wood Fiber Concession",
+                "geojsonCrs": "EPSG:4326",
+                "geojson": {
+                    "type": "FeatureCollection",
+                    "features": [
+                        {
+                            "type": "Feature",
+                            "geometry": {
+                                "type": "Polygon",
+                                "coordinates": [
+                                    [
+                                        [106.78, -6.33],
+                                        [106.92, -6.33],
+                                        [106.92, -6.19],
+                                        [106.78, -6.19],
+                                        [106.78, -6.33],
+                                    ]
+                                ],
+                            },
+                            "properties": {},
+                        }
+                    ],
+                },
+                "style": {
+                    "strokeColor": "#f59e0b",
+                    "fillColor": "#f59e0b",
+                    "fillOpacity": 0.2,
+                },
+                "showInLegend": True,
+                "legendOrder": 10,
+            },
+            {
+                "id": "camp-a",
+                "label": "Camp A",
+                "geojsonCrs": "EPSG:4326",
+                "geojson": {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [106.84, -6.26]},
+                    "properties": {},
+                },
+                "style": {
+                    "markerColor": "#ef4444",
+                    "labelBgColor": "#ffffff",
+                },
+                "showInLegend": True,
+                "legendOrder": 20,
+            },
+        ],
+    )
+
+    validated = validate_threat_map_request_payload(payload, settings)
+    assert "options" in validated
+
+
+def test_validate_rejects_payload_without_polygon_aoi() -> None:
+    settings = Settings()
+    payload = ThreatMapJobCreateRequest(
+        geojson={
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {"source": "threat-map-point", "name": "Only point"},
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [106.84, -6.26],
+                    },
+                }
+            ],
+        },
+        geojsonCrs="EPSG:4326",
+    )
+
+    with pytest.raises(ServiceValidationError, match="No AOI polygon found in geojson"):
+        validate_threat_map_request_payload(payload, settings)
+
+
+def test_validate_accepts_overlay_layer_with_mixed_point_and_polygon() -> None:
+    settings = Settings()
+    payload = ThreatMapJobCreateRequest(
+        geojson={
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [106.7, -6.4],
+                                [107.0, -6.4],
+                                [107.0, -6.1],
+                                [106.7, -6.1],
+                                [106.7, -6.4],
+                            ]
+                        ],
+                    },
+                    "properties": {},
+                }
+            ],
+        },
+        geojsonCrs="EPSG:4326",
+        overlayLayers=[
+            {
+                "id": "mixed-layer",
+                "label": "Mixed layer",
+                "geojsonCrs": "EPSG:4326",
+                "geojson": {
+                    "type": "FeatureCollection",
+                    "features": [
+                        {
+                            "type": "Feature",
+                            "geometry": {
+                                "type": "Polygon",
+                                "coordinates": [
+                                    [
+                                        [106.78, -6.33],
+                                        [106.92, -6.33],
+                                        [106.92, -6.19],
+                                        [106.78, -6.19],
+                                        [106.78, -6.33],
+                                    ]
+                                ],
+                            },
+                            "properties": {},
+                        },
+                        {
+                            "type": "Feature",
+                            "geometry": {
+                                "type": "Point",
+                                "coordinates": [106.84, -6.26],
+                            },
+                            "properties": {"name": "Camp A"},
+                        },
+                    ],
+                },
+                "showInLegend": True,
+            }
+        ],
+    )
+
+    validated = validate_threat_map_request_payload(payload, settings)
+    assert "options" in validated
+
+
 def test_draw_overlay_geometry_draws_visible_lines() -> None:
     frame = np.zeros((128, 128, 3), dtype=np.uint8)
     overlay = {
@@ -434,9 +686,38 @@ def test_draw_overlay_geometry_draws_visible_lines() -> None:
     _draw_overlay_geometry(
         frame,
         overlay_geometry=overlay_geom,
+        overlay_point_geometry=None,
+        overlay_point_name=None,
         map_h=96,
         map_bounds_mercator=(-20000000.0, -20000000.0, 20000000.0, 20000000.0),
     )
 
     yellow_mask = (frame[:, :, 0] == 255) & (frame[:, :, 1] == 242) & (frame[:, :, 2] == 0)
     assert int(np.count_nonzero(yellow_mask)) > 0
+
+
+def test_draw_overlay_geometry_draws_named_point_and_label(monkeypatch) -> None:
+    frame = np.zeros((128, 128, 3), dtype=np.uint8)
+
+    from shapely.geometry import Point
+
+    import app.services.threat_map_service as threat_map_service_module
+
+    # Keep this unit test deterministic by avoiding CRS math here; the service
+    # already exercises the real transformation path in other validation tests.
+    monkeypatch.setattr(threat_map_service_module, "_transform_geometry_to_crs", lambda geometry, _crs: geometry)
+
+    _draw_overlay_geometry(
+        frame,
+        overlay_geometry=None,
+        overlay_point_geometry=Point(0.0, 0.0),
+        overlay_point_name="Sampling point",
+        map_h=96,
+        map_bounds_mercator=(-1.0, -1.0, 1.0, 1.0),
+    )
+
+    red_mask = (frame[:, :, 0] == 255) & (frame[:, :, 1] == 78) & (frame[:, :, 2] == 78)
+    white_mask = (frame[:, :, 0] == 255) & (frame[:, :, 1] == 255) & (frame[:, :, 2] == 255)
+
+    assert int(np.count_nonzero(red_mask)) > 0
+    assert int(np.count_nonzero(white_mask)) > 0

@@ -65,6 +65,116 @@ class LandcoverStatsJobCreateRequest(BaseModel):
     comparisonYear: int = Field(default=2024, ge=1985, le=2024, description="Comparison landcover year")
 
 
+class AgbStatsJobCreateRequest(BaseModel):
+    geojson: dict[str, Any] = Field(description="GeoJSON Feature or FeatureCollection")
+
+
+class AgbThresholdCoverage(BaseModel):
+    thresholdMgHa: float
+    coverRatio: float
+    coverPercent: float
+    coverAreaHa: float
+
+
+class AgbStatsResult(BaseModel):
+    baselineYear: int
+    comparisonYear: int
+    minAgbMgHa: float
+    maxAgbMgHa: float
+    meanAgbMgHa: float
+    medianAgbMgHa: float
+    stdDevAgbMgHa: float
+    varianceAgbMgHa2: float
+    p10AgbMgHa: float
+    p25AgbMgHa: float
+    p75AgbMgHa: float
+    p90AgbMgHa: float
+    p95AgbMgHa: float
+    interquartileRangeMgHa: float
+    coefficientOfVariation: float
+    totalAgbMg: float
+    totalAgbMgHa: float
+    baselineTotalAgbMg: float
+    comparisonTotalAgbMg: float
+    agbIncreaseMg: float
+    agbDecreaseMg: float
+    netChangeAgbMg: float
+    netChangeAgbMgHa: float
+    netChangePercent: float
+    agbIncreaseAreaHa: float
+    agbDecreaseAreaHa: float
+    analyzedAreaHa: float
+    aoiAreaHa: float
+    coverageFraction: float
+    validPixelCount: int
+    agbCoverByThreshold: list[AgbThresholdCoverage]
+    metadata: dict[str, Any] | None = None
+
+
+class AgbStatsJobStatusResponse(BaseModel):
+    jobId: str
+    status: JobStatus
+    createdAt: datetime
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    progress: int | None = None
+    etaSeconds: int | None = None
+    message: str | None = None
+    result: AgbStatsResult | None = None
+    error: ChmJobError | None = None
+
+
+class ChmStatsJobCreateRequest(BaseModel):
+    geojson: dict[str, Any] = Field(description="GeoJSON FeatureCollection")
+    canopyThresholdsM: list[float] | None = Field(
+        default=None,
+        description="Optional canopy-height thresholds in meters used to compute cover ratios",
+    )
+
+
+class ChmThresholdCoverage(BaseModel):
+    thresholdM: float
+    coverRatio: float
+    coverPercent: float
+    coverAreaHa: float
+
+
+class ChmStatsResult(BaseModel):
+    minCanopyHeightM: float
+    maxCanopyHeightM: float
+    meanCanopyHeightM: float
+    medianCanopyHeightM: float
+    stdDevCanopyHeightM: float
+    varianceCanopyHeightM2: float
+    p10CanopyHeightM: float
+    p25CanopyHeightM: float
+    p75CanopyHeightM: float
+    p90CanopyHeightM: float
+    p95CanopyHeightM: float
+    interquartileRangeM: float
+    coefficientOfVariation: float
+    totalCanopyVolumeProxyM3: float
+    analyzedAreaHa: float
+    aoiAreaHa: float
+    coverageFraction: float
+    validPixelCount: int
+    canopyCoverByThreshold: list[ChmThresholdCoverage]
+    metadata: dict[str, Any] | None = None
+
+
+class ChmStatsJobStatusResponse(BaseModel):
+    jobId: str
+    status: JobStatus
+    createdAt: datetime
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    progress: int | None = None
+    etaSeconds: int | None = None
+    message: str | None = None
+    result: ChmStatsResult | None = None
+    error: ChmJobError | None = None
+
+
 class LandcoverStatsResult(BaseModel):
     baselineYear: int
     comparisonYear: int
@@ -101,11 +211,40 @@ class ThreatMapPreset(str, Enum):
     ultra = "ultra"
 
 
+class ThreatMapOverlayStyle(BaseModel):
+    strokeColor: str | None = None
+    strokeWidth: int | None = Field(default=None, ge=1, le=12)
+    fillColor: str | None = None
+    fillOpacity: float | None = Field(default=None, ge=0.0, le=1.0)
+    markerColor: str | None = None
+    markerOutlineColor: str | None = None
+    markerSize: int | None = Field(default=None, ge=2, le=24)
+    labelColor: str | None = None
+    labelBgColor: str | None = None
+
+
+class ThreatMapOverlayLayer(BaseModel):
+    id: str
+    label: str
+    geojson: dict[str, Any] = Field(description="Overlay layer GeoJSON")
+    geojsonCrs: Literal["EPSG:4326", "EPSG:3857"] = Field(default="EPSG:3857")
+    style: ThreatMapOverlayStyle = Field(default_factory=ThreatMapOverlayStyle)
+    showInLegend: bool = True
+    legendOrder: int = 100
+
+
 class ThreatMapJobCreateRequest(BaseModel):
     geojson: dict[str, Any] = Field(description="GeoJSON Feature or FeatureCollection")
     geojsonCrs: Literal["EPSG:4326", "EPSG:3857"] = Field(default="EPSG:3857")
     overlayGeojson: dict[str, Any] | None = Field(default=None, description="Optional overlay GeoJSON to draw on each frame")
     overlayGeojsonCrs: Literal["EPSG:4326", "EPSG:3857"] = Field(default="EPSG:3857")
+    overlayPointGeojson: dict[str, Any] | None = Field(default=None, description="Optional point GeoJSON to draw on each frame")
+    overlayPointName: str | None = Field(default=None, description="Optional label for the overlay point")
+    overlayPointCrs: Literal["EPSG:4326", "EPSG:3857"] = Field(default="EPSG:3857")
+    overlayLayers: list[ThreatMapOverlayLayer] | None = Field(
+        default=None,
+        description="Optional styled overlay layers (polygon/point) with legend metadata",
+    )
     preset: ThreatMapPreset = Field(default=ThreatMapPreset.balanced)
     width: int | None = Field(default=None, ge=64, le=1024)
     height: int | None = Field(default=None, ge=64, le=1024)

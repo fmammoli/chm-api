@@ -13,7 +13,9 @@ from uuid import uuid4
 
 from app.config import Settings
 from app.models import JobStatus
+from app.services.agb_stats_service import compute_agb_stats
 from app.services.chm_service import ServiceValidationError, build_cropped_raster, safe_rmtree
+from app.services.chm_stats_service import compute_chm_stats
 from app.services.landcover_stats_service import compute_landcover_change_stats
 
 logger = logging.getLogger("chm_api")
@@ -345,6 +347,112 @@ def run_landcover_stats_job(
         mark_job_failed(settings, job_id, code="validation_failed", message=str(exc))
     except Exception as exc:  # pragma: no cover
         logger.exception("landcover_job_failed_generation job_id=%s", job_id)
+        mark_job_failed(settings, job_id, code="generation_failed", message=str(exc))
+
+
+def run_agb_stats_job(
+    settings: Settings,
+    job_id: str,
+    geojson_obj: dict[str, Any],
+) -> None:
+    logger.info("agb_stats_job_worker_start job_id=%s", job_id)
+
+    _merge_job(
+        settings,
+        job_id,
+        {
+            "status": JobStatus.running.value,
+            "startedAt": _utc_now_iso(),
+            "finishedAt": None,
+            "progress": 10,
+            "etaSeconds": None,
+            "message": "AGB stats running",
+            "error": None,
+        },
+    )
+
+    def _on_progress(progress: int, message: str | None) -> None:
+        update_job_progress(settings, job_id, progress=progress, message=message)
+
+    try:
+        stats_result = compute_agb_stats(
+            geojson_obj=geojson_obj,
+            settings=settings,
+            progress_callback=_on_progress,
+        )
+        _merge_job(
+            settings,
+            job_id,
+            {
+                "status": JobStatus.succeeded.value,
+                "finishedAt": _utc_now_iso(),
+                "progress": 100,
+                "etaSeconds": 0,
+                "message": "AGB stats completed",
+                "result": stats_result,
+                "error": None,
+            },
+        )
+        logger.info("agb_stats_job_worker_complete job_id=%s", job_id)
+    except ServiceValidationError as exc:
+        logger.warning("agb_stats_job_failed_validation job_id=%s error=%s", job_id, str(exc))
+        mark_job_failed(settings, job_id, code="validation_failed", message=str(exc))
+    except Exception as exc:  # pragma: no cover
+        logger.exception("agb_stats_job_failed_generation job_id=%s", job_id)
+        mark_job_failed(settings, job_id, code="generation_failed", message=str(exc))
+
+
+def run_chm_stats_job(
+    settings: Settings,
+    job_id: str,
+    geojson_obj: dict[str, Any],
+    canopy_thresholds_m: list[float] | None,
+) -> None:
+    logger.info("chm_stats_job_worker_start job_id=%s", job_id)
+
+    _merge_job(
+        settings,
+        job_id,
+        {
+            "status": JobStatus.running.value,
+            "startedAt": _utc_now_iso(),
+            "finishedAt": None,
+            "progress": 10,
+            "etaSeconds": None,
+            "message": "CHM stats running",
+            "error": None,
+        },
+    )
+
+    def _on_progress(progress: int, message: str | None) -> None:
+        update_job_progress(settings, job_id, progress=progress, message=message)
+
+    try:
+        stats_result = compute_chm_stats(
+            geojson_obj=geojson_obj,
+            settings=settings,
+            canopy_thresholds_m=canopy_thresholds_m,
+            progress_callback=_on_progress,
+        )
+        _merge_job(
+            settings,
+            job_id,
+            {
+                "status": JobStatus.succeeded.value,
+                "finishedAt": _utc_now_iso(),
+                "progress": 100,
+                "etaSeconds": 0,
+                "message": "CHM stats completed",
+                "result": stats_result,
+                "error": None,
+            },
+        )
+        logger.info("chm_stats_job_worker_complete job_id=%s", job_id)
+    except ServiceValidationError as exc:
+        logger.warning("chm_stats_job_failed_validation job_id=%s error=%s", job_id, str(exc))
+        mark_job_failed(settings, job_id, code="validation_failed", message=str(exc))
+    except Exception as exc:  # pragma: no cover
+        logger.exception("chm_stats_job_failed_generation job_id=%s", job_id)
         mark_job_failed(settings, job_id, code="generation_failed", message=str(exc))
 
 

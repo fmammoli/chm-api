@@ -35,6 +35,31 @@ class Settings(BaseSettings):
     landcover_forest_colors: list[str] = ["1f8d49"]
     landcover_pmtiles_zoom: int = Field(default=12, ge=0, le=30)
 
+    # CTrees AGB PMTiles source for annual stats.
+    agb_stats_base_url: str = "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/agb-ctrees-pmtiles-values"
+    agb_stats_url_template: str = "{base_url}/{year}_agb-ctrees.pmtiles"
+    agb_stats_baseline_year: int = Field(default=2000, ge=2000, le=2025)
+    agb_stats_comparison_year: int = Field(default=2025, ge=2000, le=2025)
+    agb_stats_pmtiles_zoom: int = Field(default=10, ge=0, le=30)
+    agb_stats_tile_fetch_concurrency: int = Field(default=2, ge=1, le=8)
+    agb_stats_histogram_bins: int = Field(default=512, ge=64, le=4096)
+    agb_stats_histogram_min_mgha: float = Field(default=0.0, ge=0.0, le=1000.0)
+    agb_stats_histogram_max_mgha: float = Field(default=300.0, gt=1.0, le=1000.0)
+    agb_stats_default_thresholds_mgha: list[float] = [50.0, 100.0, 150.0]
+    agb_stats_max_thresholds: int = Field(default=10, ge=1, le=32)
+    agb_stats_max_tiles_per_request: int = Field(default=256, ge=1, le=4096)
+
+    # CHM PMTiles source for canopy-height stats.
+    chm_stats_pmtiles_url: str = "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/chm-pmtiles/chm-indonesia.pmtiles"
+    chm_stats_pmtiles_zoom: int = Field(default=10, ge=0, le=30)
+    chm_stats_tile_fetch_concurrency: int = Field(default=2, ge=1, le=8)
+    chm_stats_histogram_bins: int = Field(default=512, ge=64, le=4096)
+    chm_stats_histogram_min_m: float = Field(default=0.0, ge=0.0, le=100.0)
+    chm_stats_histogram_max_m: float = Field(default=120.0, gt=1.0, le=300.0)
+    chm_stats_default_thresholds_m: list[float] = [5.0, 10.0, 20.0]
+    chm_stats_max_thresholds: int = Field(default=10, ge=1, le=32)
+    chm_stats_max_tiles_per_request: int = Field(default=256, ge=1, le=4096)
+
     # Operational limits
     max_geojson_bytes: int = 1_000_000
     max_aoi_area_km2: float = 1_600.0
