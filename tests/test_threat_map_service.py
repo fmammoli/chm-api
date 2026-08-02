@@ -173,8 +173,8 @@ def test_load_legend_entries_from_mapbiomas_colors_path_reads_palette(tmp_path: 
 
     entries = _load_legend_entries_from_mapbiomas_colors_path(str(colors_path))
 
-    assert entries[0] == {"class_code": "3", "label": "Forest Formation", "color": "#1f8d49"}
-    assert entries[1] == {"class_code": "5", "label": "Mangrove", "color": "#04381d"}
+    assert entries[0] == {"class_code": "3", "label": "Forest Formation / Formasi Hutan", "color": "#1f8d49"}
+    assert entries[1] == {"class_code": "5", "label": "Mangrove / Mangrove", "color": "#04381d"}
 
 
 def test_load_legend_entries_from_qgz_path_reads_palette(tmp_path: Path):
@@ -199,8 +199,8 @@ def test_load_legend_entries_from_qgz_path_reads_palette(tmp_path: Path):
 
         entries = _load_legend_entries_from_qgz_path(str(qgz_path))
         assert len(entries) == 2
-        assert entries[0] == {"class_code": "3", "label": "Forest", "color": "#1f8d49"}
-        assert entries[1] == {"class_code": "5", "label": "Mangrove", "color": "#04381d"}
+        assert entries[0] == {"class_code": "3", "label": "Forest / Formasi Hutan", "color": "#1f8d49"}
+        assert entries[1] == {"class_code": "5", "label": "Mangrove / Mangrove", "color": "#04381d"}
 
 
 def test_load_legend_entries_falls_back_to_qgz_when_manifest_and_colors_missing(tmp_path: Path, monkeypatch):
@@ -231,6 +231,7 @@ def test_load_legend_entries_falls_back_to_qgz_when_manifest_and_colors_missing(
 
         assert len(entries) == 1
         assert entries[0]["class_code"] == "76"
+        assert entries[0]["label"] == "Peat Swamp Forest / Hutan Rawa Gambut"
         assert entries[0]["color"] == "#2f7360"
 
 

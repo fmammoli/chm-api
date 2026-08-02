@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     agb_stats_histogram_bins: int = Field(default=512, ge=64, le=4096)
     agb_stats_histogram_min_mgha: float = Field(default=0.0, ge=0.0, le=1000.0)
     agb_stats_histogram_max_mgha: float = Field(default=300.0, gt=1.0, le=1000.0)
+    agb_stats_scale_factor: float = Field(default=10.0, gt=0.0, le=1000.0)
     agb_stats_default_thresholds_mgha: list[float] = [50.0, 100.0, 150.0]
     agb_stats_max_thresholds: int = Field(default=10, ge=1, le=32)
     agb_stats_max_tiles_per_request: int = Field(default=256, ge=1, le=4096)

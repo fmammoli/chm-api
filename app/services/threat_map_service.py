@@ -40,6 +40,23 @@ YEARS = list(range(1990, 2025))
 YEARS_EXPECTED = len(YEARS)
 logger = logging.getLogger("chm_api")
 
+_LEGEND_INDONESIAN_LABELS_BY_CLASS_CODE = {
+    "3": "Formasi Hutan",
+    "5": "Mangrove",
+    "76": "Hutan Rawa Gambut",
+    "13": "Tumbuhan Non-Hutan Lainnya",
+    "40": "Sawah",
+    "35": "Sawit",
+    "9": "Kebun Kayu",
+    "21": "Pertanian Lainnya",
+    "30": "Lubang Tambang",
+    "24": "Permukiman",
+    "25": "Non-Vegetasi Lainnya",
+    "31": "Tambak",
+    "33": "Sungai, Danau, Laut",
+    "27": "Citra Tertutup Awan",
+}
+
 
 class ThreatMapError(RuntimeError):
     def __init__(self, code: str, message: str):
@@ -1263,6 +1280,19 @@ def _build_overlay_legend_entries(overlay_layers: list[OverlayRenderLayer]) -> l
     return entries
 
 
+def _normalize_landcover_legend_label(class_code: str, label: str) -> str:
+    cleaned_label = label.strip()
+    if not cleaned_label:
+        return cleaned_label
+    if " / " in cleaned_label:
+        return cleaned_label
+
+    indonesian_label = _LEGEND_INDONESIAN_LABELS_BY_CLASS_CODE.get(class_code.strip())
+    if not indonesian_label:
+        return cleaned_label
+    return f"{cleaned_label} / {indonesian_label}"
+
+
 def _draw_overlay_layers(
     frame: np.ndarray,
     *,
@@ -1597,7 +1627,7 @@ def _draw_legend_band(frame: np.ndarray, *, year: int, legend_entries: list[dict
     content_x0 = panel_x0 + 10
     content_x1 = panel_x1 - 10
     content_y0 = section_y + 8
-    row_h = 24
+    row_h = 36
     swatch = 14
     gutter_x = 8
     label_pad = 6
@@ -1631,17 +1661,14 @@ def _draw_legend_band(frame: np.ndarray, *, year: int, legend_entries: list[dict
             width=1,
         )
 
-        if class_code and label:
-            text = f"{class_code}: {label}"
-        elif class_code:
-            text = class_code
-        else:
-            text = label
-
         text_x = swatch_x1 + label_pad
         max_text_w = max(24, col_w - (swatch + label_pad + 2))
-        clipped = _truncate_to_width(draw, text, max_text_w)
-        draw.text((text_x, item_y + 4), clipped, fill=(41, 53, 67))
+        title_text, subtitle_text = _split_legend_label_lines(class_code=class_code, label=label)
+        title_clipped = _truncate_to_width(draw, title_text, max_text_w)
+        draw.text((text_x, item_y + 1), title_clipped, fill=(41, 53, 67))
+        if subtitle_text:
+            subtitle_clipped = _truncate_to_width(draw, subtitle_text, max_text_w)
+            draw.text((text_x, item_y + 19), subtitle_clipped, fill=(122, 132, 145))
 
     frame[:, :, :] = np.asarray(image, dtype=np.uint8)
 
@@ -1653,7 +1680,7 @@ def _compute_legend_band_height(*, width: int, legend_entries: list[dict[str, st
 
     col_count = 2 if len(valid_entries) >= 2 else 1
 
-    row_h = 24
+    row_h = 36
     rows = (len(valid_entries) + col_count - 1) // col_count
 
     # 84px accounts for header, separators, and panel paddings; rows add vertical scale.
@@ -1672,6 +1699,25 @@ def _collect_valid_legend_entries(legend_entries: list[dict[str, str]]) -> list[
             continue
         valid_entries.append((class_code, label, color))
     return valid_entries
+
+
+def _split_legend_label_lines(*, class_code: str, label: str) -> tuple[str, str]:
+    if label:
+        english_label, indonesian_label = _split_bilingual_label(label)
+        if class_code and english_label:
+            return f"{class_code}: {english_label}", indonesian_label
+        if class_code:
+            return class_code, indonesian_label
+        return english_label, indonesian_label
+
+    return class_code, ""
+
+
+def _split_bilingual_label(label: str) -> tuple[str, str]:
+    if " / " not in label:
+        return label, ""
+    english_label, indonesian_label = label.split(" / ", 1)
+    return english_label.strip(), indonesian_label.strip()
 
 
 def _measure_text(draw: ImageDraw.ImageDraw, value: str) -> tuple[int, int]:
@@ -1745,7 +1791,10 @@ def _load_legend_entries_from_path(path_text: str) -> list[dict[str, str]]:
         output.append(
             {
                 "class_code": str(entry.get("class_code", "")),
-                "label": str(entry.get("label", "")),
+                "label": _normalize_landcover_legend_label(
+                    str(entry.get("class_code", "")),
+                    str(entry.get("label", "")),
+                ),
                 "color": str(entry.get("color", "")),
             }
         )
@@ -1781,7 +1830,7 @@ def _load_legend_entries_from_qgz_path(path_text: str) -> list[dict[str, str]]:
         entries.append(
             {
                 "class_code": class_code,
-                "label": label,
+                "label": _normalize_landcover_legend_label(class_code, label),
                 "color": color,
             }
         )
@@ -1824,7 +1873,7 @@ def _load_legend_entries_from_mapbiomas_colors_path(path_text: str) -> list[dict
             entries.append(
                 {
                     "class_code": class_code,
-                    "label": label,
+                    "label": _normalize_landcover_legend_label(class_code, label),
                     "color": f"#{red:02x}{green:02x}{blue:02x}",
                 }
             )

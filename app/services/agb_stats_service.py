@@ -15,14 +15,22 @@ import numpy as np
 from PIL import Image
 import pmtiles.reader as pm_reader
 from pmtiles.tile import Compression as PMTilesCompression, HeaderDict
+import rasterio
 import rasterio.features
+import rasterio.mask
 from rasterio.transform import from_bounds
 import requests
 from shapely.geometry import mapping
 from shapely.geometry.base import BaseGeometry
 
 from app.config import Settings
-from app.services.chm_service import ServiceValidationError, _extract_geometry, _transform_geometry_to_crs, _validate_geometry
+from app.services.chm_service import (
+	ServiceValidationError,
+	_ctrees_agb_remote_cog_url,
+	_extract_geometry,
+	_transform_geometry_to_crs,
+	_validate_geometry,
+)
 from app.services.landcover_stats_service import _aoi_area_ha
 
 logger = logging.getLogger("chm_api")
@@ -47,6 +55,16 @@ class AgbTileStats:
 	agb_decrease_area_ha: float
 	histogram_counts: np.ndarray
 	threshold_counts: dict[float, int]
+
+
+@dataclass
+class AgbCogYearData:
+	year: int
+	url: str
+	scale_factor: float
+	values: np.ndarray
+	aoi_mask: np.ndarray
+	valid_mask: np.ndarray
 
 
 def validate_agb_stats_request_payload(geojson_obj: dict, settings: Settings) -> None:
@@ -92,7 +110,7 @@ def compute_agb_stats(
 	)
 
 	if progress_callback is not None:
-		progress_callback(15, "Opening AGB PMTiles sources")
+		progress_callback(15, "Opening CTrees AGB COG sources")
 
 	baseline_year = settings.agb_stats_baseline_year
 	comparison_year = settings.agb_stats_comparison_year
@@ -100,108 +118,108 @@ def compute_agb_stats(
 	comparison_url = _resolve_year_url(settings, comparison_year)
 
 	logger.info(
-		"agb_stats_pipeline step=2_open_pmtiles status=start baseline_year=%s comparison_year=%s",
+		"agb_stats_pipeline step=2_open_cogs status=start baseline_year=%s comparison_year=%s",
 		baseline_year,
 		comparison_year,
 	)
-	baseline_reader = _build_pmtiles_reader(baseline_url)
-	comparison_reader = _build_pmtiles_reader(comparison_url)
-	baseline_header = baseline_reader.header()
-	comparison_header = comparison_reader.header()
-	for header, year in ((baseline_header, baseline_year), (comparison_header, comparison_year)):
-		tile_type = str(getattr(header["tile_type"], "name", header["tile_type"]))
-		if tile_type != "PNG":
-			raise ServiceValidationError(f"Unsupported AGB PMTiles tile type for {year}: {tile_type}")
-	logger.info("agb_stats_pipeline step=2_open_pmtiles status=done")
-
-	max_zoom = min(int(baseline_header["max_zoom"]), int(comparison_header["max_zoom"]))
-	target_zoom = min(settings.agb_stats_pmtiles_zoom, max_zoom)
-	tiles = list(mercantile.tiles(*geometry.bounds, [target_zoom], truncate=True))
-	if not tiles:
-		raise ServiceValidationError("No PMTiles tiles intersect the AOI")
-	if len(tiles) > settings.agb_stats_max_tiles_per_request:
-		raise ServiceValidationError("AOI intersects too many AGB PMTiles tiles")
-
-	logger.info("agb_stats_tiles_selected target_zoom=%s tile_count=%s", target_zoom, len(tiles))
+	baseline_data = _load_agb_cog_year_data(year=baseline_year, geometry=geometry, settings=settings)
 	if progress_callback is not None:
-		progress_callback(25, f"Processing {len(tiles)} AGB PMTiles tiles")
+		progress_callback(45, f"Loaded baseline AGB COG for {baseline_year}")
+	comparison_data = _load_agb_cog_year_data(year=comparison_year, geometry=geometry, settings=settings)
+	logger.info("agb_stats_pipeline step=2_open_cogs status=done")
+	if not math.isclose(baseline_data.scale_factor, comparison_data.scale_factor, rel_tol=1e-9, abs_tol=1e-9):
+		logger.warning(
+			"agb_stats_scale_factor_mismatch baseline=%s comparison=%s using_comparison=%s",
+			baseline_data.scale_factor,
+			comparison_data.scale_factor,
+			comparison_data.scale_factor,
+		)
 
-	geometry_3857 = _transform_geometry_to_crs(geometry, "EPSG:3857")
-	worker_count = max(1, min(settings.agb_stats_tile_fetch_concurrency, len(tiles), 8))
-	aggregate = _empty_tile_stats(bin_count=settings.agb_stats_histogram_bins, thresholds=thresholds)
-	processed = 0
+	if baseline_data.values.shape != comparison_data.values.shape:
+		raise ServiceValidationError("Baseline and comparison COG clips are misaligned (shape mismatch)")
+	if not np.array_equal(baseline_data.aoi_mask, comparison_data.aoi_mask):
+		raise ServiceValidationError("Baseline and comparison COG clips are misaligned (AOI mask mismatch)")
 
-	with ThreadPoolExecutor(max_workers=worker_count) as executor:
-		futures = [
-			executor.submit(
-				_process_agb_tile,
-				tile,
-				geometry_3857,
-				baseline_reader,
-				baseline_header,
-				comparison_reader,
-				comparison_header,
-				thresholds,
-				bin_edges,
-				settings,
-			)
-			for tile in tiles
-		]
+	total_pixels = int(comparison_data.aoi_mask.sum())
+	if total_pixels == 0:
+		raise ServiceValidationError("No CTrees AGB coverage intersects the AOI")
 
-		for future in futures:
-			tile_stats = future.result()
-			_merge_tile_stats(aggregate, tile_stats)
-			processed += 1
-			if progress_callback is not None:
-				progress_callback(25 + int((processed / len(tiles)) * 55), f"Processed {processed}/{len(tiles)} tiles")
-
-	if aggregate.total_pixels == 0:
-		raise ServiceValidationError("No PMTiles coverage intersects the AOI")
-	if aggregate.valid_pixels_2025 == 0:
+	comparison_valid_pixels = int(comparison_data.valid_mask.sum())
+	baseline_valid_pixels = int(baseline_data.valid_mask.sum())
+	if comparison_valid_pixels == 0:
 		raise ServiceValidationError("No valid AGB pixels found inside AOI")
-	if not math.isfinite(aggregate.min_agb_mgha_2025) or not math.isfinite(aggregate.max_agb_mgha_2025):
-		raise ServiceValidationError("Unable to derive AGB min/max values from AOI")
+
+	comparison_values_valid = comparison_data.values[comparison_data.valid_mask].astype(np.float64, copy=False)
+	baseline_values_valid = baseline_data.values[baseline_data.valid_mask].astype(np.float64, copy=False)
+
+	if comparison_values_valid.size == 0:
+		raise ServiceValidationError("No valid comparison-year AGB values found inside AOI")
 
 	if progress_callback is not None:
 		progress_callback(90, "Finalizing AGB statistics")
 
-	mean_agb = aggregate.sum_agb_mgha_2025 / aggregate.valid_pixels_2025
-	variance = max(0.0, (aggregate.sum_agb_sq_mgha2_2025 / aggregate.valid_pixels_2025) - (mean_agb * mean_agb))
+	mean_agb = float(np.mean(comparison_values_valid))
+	variance = float(np.var(comparison_values_valid))
 	stddev = math.sqrt(variance)
-	p10 = _hist_quantile(aggregate.histogram_counts, bin_edges, 0.10)
-	p25 = _hist_quantile(aggregate.histogram_counts, bin_edges, 0.25)
-	p50 = _hist_quantile(aggregate.histogram_counts, bin_edges, 0.50)
-	p75 = _hist_quantile(aggregate.histogram_counts, bin_edges, 0.75)
-	p90 = _hist_quantile(aggregate.histogram_counts, bin_edges, 0.90)
-	p95 = _hist_quantile(aggregate.histogram_counts, bin_edges, 0.95)
+	p10, p25, p50, p75, p90, p95 = np.quantile(comparison_values_valid, [0.10, 0.25, 0.50, 0.75, 0.90, 0.95]).tolist()
 	aoi_area_ha = _aoi_area_ha(geometry)
-	coverage_fraction = aggregate.valid_pixels_2025 / aggregate.total_pixels
+	coverage_fraction = comparison_valid_pixels / total_pixels
+	comparison_area_ha = aoi_area_ha * coverage_fraction
+	baseline_area_ha = aoi_area_ha * (baseline_valid_pixels / total_pixels)
+	comparison_total = mean_agb * comparison_area_ha
+	baseline_mean = float(np.mean(baseline_values_valid)) if baseline_values_valid.size else 0.0
+	baseline_total = baseline_mean * baseline_area_ha
+
+	common_mask = baseline_data.valid_mask & comparison_data.valid_mask
+	common_valid_pixels = int(common_mask.sum())
+	if common_valid_pixels > 0:
+		comparison_common = comparison_data.values[common_mask].astype(np.float64, copy=False)
+		baseline_common = baseline_data.values[common_mask].astype(np.float64, copy=False)
+		delta = comparison_common - baseline_common
+		positive_delta = delta[delta > 0]
+		negative_delta = delta[delta < 0]
+		common_area_ha = aoi_area_ha * (common_valid_pixels / total_pixels)
+		common_pixel_area_ha = common_area_ha / common_valid_pixels
+		agb_increase_mg = float(positive_delta.sum() * common_pixel_area_ha)
+		agb_decrease_mg = float((-negative_delta).sum() * common_pixel_area_ha)
+		agb_increase_area_ha = float(positive_delta.size * common_pixel_area_ha)
+		agb_decrease_area_ha = float(negative_delta.size * common_pixel_area_ha)
+	else:
+		agb_increase_mg = 0.0
+		agb_decrease_mg = 0.0
+		agb_increase_area_ha = 0.0
+		agb_decrease_area_ha = 0.0
+
+	hist_min = min(settings.agb_stats_histogram_min_mgha, float(np.min(comparison_values_valid)))
+	hist_max = max(settings.agb_stats_histogram_max_mgha, float(np.max(comparison_values_valid)))
+	if hist_max <= hist_min:
+		hist_max = hist_min + 1.0
+	bin_edges = np.linspace(hist_min, hist_max, settings.agb_stats_histogram_bins + 1, dtype=np.float64)
+	histogram_counts, _ = np.histogram(comparison_values_valid, bins=bin_edges)
+	threshold_counts = {threshold: int(np.count_nonzero(comparison_values_valid >= threshold)) for threshold in thresholds}
+
 	threshold_metrics: list[dict[str, float]] = []
 	for threshold in thresholds:
-		hits = aggregate.threshold_counts.get(threshold, 0)
-		ratio = (hits / aggregate.valid_pixels_2025) if aggregate.valid_pixels_2025 else 0.0
+		hits = threshold_counts.get(threshold, 0)
+		ratio = (hits / comparison_valid_pixels) if comparison_valid_pixels else 0.0
 		threshold_metrics.append(
 			{
 				"thresholdMgHa": round(threshold, 4),
 				"coverRatio": round(ratio, 6),
 				"coverPercent": round(ratio * 100.0, 4),
-				"coverAreaHa": round(aggregate.valid_area_ha_2025 * ratio, 4),
+				"coverAreaHa": round(comparison_area_ha * ratio, 4),
 			}
 		)
 
-	comparison_total = aggregate.comparison_total_agb_mg
-	baseline_total = aggregate.baseline_total_agb_mg
 	net_change = comparison_total - baseline_total
 	net_change_pct = (net_change / baseline_total * 100.0) if baseline_total > 0 else 0.0
-	total_agb_mgha_2025 = (
-		comparison_total / aggregate.valid_area_ha_2025 if aggregate.valid_area_ha_2025 > 0 else 0.0
-	)
+	total_agb_mgha_2025 = comparison_total / comparison_area_ha if comparison_area_ha > 0 else 0.0
 
 	return {
 		"baselineYear": baseline_year,
 		"comparisonYear": comparison_year,
-		"minAgbMgHa": round(aggregate.min_agb_mgha_2025, 4),
-		"maxAgbMgHa": round(aggregate.max_agb_mgha_2025, 4),
+		"minAgbMgHa": round(float(np.min(comparison_values_valid)), 4),
+		"maxAgbMgHa": round(float(np.max(comparison_values_valid)), 4),
 		"meanAgbMgHa": round(mean_agb, 4),
 		"medianAgbMgHa": round(p50, 4),
 		"stdDevAgbMgHa": round(stddev, 4),
@@ -217,30 +235,30 @@ def compute_agb_stats(
 		"totalAgbMgHa": round(total_agb_mgha_2025, 4),
 		"baselineTotalAgbMg": round(baseline_total, 4),
 		"comparisonTotalAgbMg": round(comparison_total, 4),
-		"agbIncreaseMg": round(aggregate.agb_increase_mg, 4),
-		"agbDecreaseMg": round(aggregate.agb_decrease_mg, 4),
+		"agbIncreaseMg": round(agb_increase_mg, 4),
+		"agbDecreaseMg": round(agb_decrease_mg, 4),
 		"netChangeAgbMg": round(net_change, 4),
-		"netChangeAgbMgHa": round(net_change / aggregate.valid_area_ha_2025 if aggregate.valid_area_ha_2025 > 0 else 0.0, 4),
+		"netChangeAgbMgHa": round(net_change / comparison_area_ha if comparison_area_ha > 0 else 0.0, 4),
 		"netChangePercent": round(net_change_pct, 4),
-		"agbIncreaseAreaHa": round(aggregate.agb_increase_area_ha, 4),
-		"agbDecreaseAreaHa": round(aggregate.agb_decrease_area_ha, 4),
-		"analyzedAreaHa": round(aggregate.valid_area_ha_2025, 4),
+		"agbIncreaseAreaHa": round(agb_increase_area_ha, 4),
+		"agbDecreaseAreaHa": round(agb_decrease_area_ha, 4),
+		"analyzedAreaHa": round(comparison_area_ha, 4),
 		"aoiAreaHa": round(aoi_area_ha, 4),
 		"coverageFraction": round(coverage_fraction, 6),
-		"validPixelCount": aggregate.valid_pixels_2025,
+		"validPixelCount": comparison_valid_pixels,
 		"agbCoverByThreshold": threshold_metrics,
 		"metadata": {
 			"baselineUrl": baseline_url,
 			"comparisonUrl": comparison_url,
-			"sourceFormat": "pmtiles_png",
-			"zoom": target_zoom,
-			"tileCount": len(tiles),
+			"sourceFormat": "ctrees_agb_cog",
 			"histogramBins": settings.agb_stats_histogram_bins,
-			"histogramMinMgHa": settings.agb_stats_histogram_min_mgha,
-			"histogramMaxMgHa": settings.agb_stats_histogram_max_mgha,
+			"histogramMinMgHa": round(hist_min, 4),
+			"histogramMaxMgHa": round(hist_max, 4),
+			"histogramSampleCount": int(histogram_counts.sum()),
 			"thresholdsMgHa": ",".join(f"{threshold:g}" for threshold in thresholds),
 			"baselineYear": baseline_year,
 			"comparisonYear": comparison_year,
+			"valueScaleFactor": comparison_data.scale_factor,
 		},
 	}
 
@@ -256,9 +274,75 @@ def _resolve_thresholds(custom_thresholds: list[float] | None, settings: Setting
 
 
 def _resolve_year_url(settings: Settings, year: int) -> str:
-	resolved = settings.agb_stats_url_template.format(base_url=settings.agb_stats_base_url.rstrip("/"), year=year)
-	logger.info("agb_year_url_template year=%s url=%s", year, resolved)
+	resolved = _ctrees_agb_remote_cog_url(settings, year=year, variable="agb")
+	logger.info("agb_year_cog_url year=%s url=%s", year, resolved)
 	return resolved
+
+
+def _load_agb_cog_year_data(*, year: int, geometry: BaseGeometry, settings: Settings) -> AgbCogYearData:
+	url = _resolve_year_url(settings, year)
+	try:
+		with rasterio.open(url) as src:
+			nodata = _resolve_nodata(src.nodata, src.dtypes[0])
+			scale_factor = _resolve_agb_scale_factor(src, settings)
+			geom_src = _transform_geometry_to_crs(geometry, src.crs)
+			masked, transform = rasterio.mask.mask(
+				src,
+				[mapping(geom_src)],
+				crop=True,
+				nodata=nodata,
+				all_touched=False,
+				filled=True,
+			)
+	except Exception as exc:
+		raise ServiceValidationError(f"Failed to read CTrees AGB COG for year {year}") from exc
+
+	if masked.size == 0:
+		raise ServiceValidationError(f"No CTrees AGB data intersects AOI for year {year}")
+
+	values = masked[0].astype(np.float64, copy=False)
+	if scale_factor != 1.0:
+		values = values / scale_factor
+	aoi_mask = rasterio.features.geometry_mask(
+		[mapping(geom_src)],
+		out_shape=values.shape,
+		transform=transform,
+		invert=True,
+	)
+	valid_mask = aoi_mask & np.isfinite(values) & ~np.isclose(values, nodata) & (values >= 0.0)
+
+	return AgbCogYearData(
+		year=year,
+		url=url,
+		scale_factor=scale_factor,
+		values=values,
+		aoi_mask=aoi_mask,
+		valid_mask=valid_mask,
+	)
+
+
+def _resolve_agb_scale_factor(src: rasterio.io.DatasetReader, settings: Settings) -> float:
+	# Prefer explicit metadata from source if present; otherwise use configured default.
+	tags = src.tags(1)
+	for key in ("agb_scale_factor", "scale_factor", "AGB_SCALE_FACTOR", "SCALE_FACTOR"):
+		raw = tags.get(key)
+		if raw is None:
+			continue
+		try:
+			value = float(raw)
+			if value > 0.0:
+				return value
+		except ValueError:
+			continue
+	return float(settings.agb_stats_scale_factor)
+
+
+def _resolve_nodata(nodata: float | None, dtype: str) -> float:
+	if nodata is not None:
+		return float(nodata)
+	if np.issubdtype(np.dtype(dtype), np.integer):
+		return float(np.iinfo(np.dtype(dtype)).max)
+	return -9999.0
 
 
 def _build_pmtiles_reader(url: str) -> pm_reader.Reader:

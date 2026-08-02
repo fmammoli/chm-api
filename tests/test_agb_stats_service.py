@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import mercantile
 import numpy as np
 
 from app.config import Settings
-from app.services.agb_stats_service import AgbTileStats, compute_agb_stats
+from app.services.agb_stats_service import AgbCogYearData, compute_agb_stats
 
 
 def _geojson_feature_collection() -> dict:
@@ -36,43 +35,35 @@ def test_compute_agb_stats_returns_expected_core_metrics(monkeypatch):
 		agb_stats_histogram_min_mgha=0.0,
 		agb_stats_histogram_max_mgha=300.0,
 		agb_stats_histogram_bins=64,
+		agb_stats_scale_factor=1.0,
 		agb_stats_default_thresholds_mgha=[50.0, 100.0, 150.0],
 	)
-
-	class DummyReader:
-		def header(self):
-			return {"tile_type": "PNG", "max_zoom": 10}
-
-	monkeypatch.setattr("app.services.agb_stats_service._build_pmtiles_reader", lambda _url: DummyReader())
-	monkeypatch.setattr(
-		"app.services.agb_stats_service.mercantile.tiles",
-		lambda *args, **kwargs: [mercantile.Tile(x=1, y=1, z=10)],
-	)
-	monkeypatch.setattr("app.services.agb_stats_service._transform_geometry_to_crs", lambda geometry, _crs: geometry)
 	monkeypatch.setattr("app.services.agb_stats_service._aoi_area_ha", lambda _geometry: 4.0)
 
-	def _mock_tile(*_args, **_kwargs):
-		return AgbTileStats(
-			total_pixels=4,
-			valid_pixels_2025=4,
-			sum_agb_mgha_2025=100.0,
-			sum_agb_sq_mgha2_2025=2700.0,
-			min_agb_mgha_2025=10.0,
-			max_agb_mgha_2025=40.0,
-			valid_area_ha_2025=4.0,
-			total_area_ha=4.0,
-			total_agb_mg_2025=100.0,
-			baseline_total_agb_mg=80.0,
-			comparison_total_agb_mg=100.0,
-			agb_increase_mg=25.0,
-			agb_decrease_mg=5.0,
-			agb_increase_area_ha=2.0,
-			agb_decrease_area_ha=1.0,
-			histogram_counts=np.array([1, 1, 1, 1] + [0] * 60, dtype=np.int64),
-			threshold_counts={50.0: 3, 100.0: 1, 150.0: 0},
+	aoi_mask = np.array([[True, True], [True, True]], dtype=bool)
+	comparison_values = np.array([[10.0, 20.0], [30.0, 40.0]], dtype=np.float64)
+	baseline_values = np.array([[5.0, 15.0], [25.0, 35.0]], dtype=np.float64)
+
+	def _mock_year_loader(*, year, geometry, settings):
+		if year == settings.agb_stats_baseline_year:
+			return AgbCogYearData(
+				year=year,
+				url="baseline.tif",
+				scale_factor=1.0,
+				values=baseline_values,
+				aoi_mask=aoi_mask,
+				valid_mask=aoi_mask,
+			)
+		return AgbCogYearData(
+			year=year,
+			url="comparison.tif",
+			scale_factor=1.0,
+			values=comparison_values,
+			aoi_mask=aoi_mask,
+			valid_mask=aoi_mask,
 		)
 
-	monkeypatch.setattr("app.services.agb_stats_service._process_agb_tile", _mock_tile)
+	monkeypatch.setattr("app.services.agb_stats_service._load_agb_cog_year_data", _mock_year_loader)
 
 	result = compute_agb_stats(
 		geojson_obj=_geojson_feature_collection(),
@@ -91,53 +82,48 @@ def test_compute_agb_stats_returns_expected_core_metrics(monkeypatch):
 	assert result["baselineTotalAgbMg"] == 80.0
 	assert result["netChangeAgbMg"] == 20.0
 	assert result["netChangePercent"] == 25.0
-	assert result["agbIncreaseMg"] == 25.0
-	assert result["agbDecreaseMg"] == 5.0
+	assert result["agbIncreaseMg"] == 20.0
+	assert result["agbDecreaseMg"] == 0.0
 
 	threshold_metrics = result["agbCoverByThreshold"]
 	assert threshold_metrics[0]["thresholdMgHa"] == 50.0
-	assert threshold_metrics[0]["coverRatio"] == 0.75
+	assert threshold_metrics[0]["coverRatio"] == 0.0
 	assert threshold_metrics[1]["thresholdMgHa"] == 100.0
-	assert threshold_metrics[1]["coverRatio"] == 0.25
+	assert threshold_metrics[1]["coverRatio"] == 0.0
 
 
 def test_compute_agb_stats_uses_custom_thresholds(monkeypatch):
-	settings = Settings(agb_stats_histogram_bins=64, agb_stats_default_thresholds_mgha=[50.0, 100.0, 150.0])
-
-	class DummyReader:
-		def header(self):
-			return {"tile_type": "PNG", "max_zoom": 10}
-
-	monkeypatch.setattr("app.services.agb_stats_service._build_pmtiles_reader", lambda _url: DummyReader())
-	monkeypatch.setattr(
-		"app.services.agb_stats_service.mercantile.tiles",
-		lambda *args, **kwargs: [mercantile.Tile(x=1, y=1, z=10)],
+	settings = Settings(
+		agb_stats_histogram_bins=64,
+		agb_stats_scale_factor=1.0,
+		agb_stats_default_thresholds_mgha=[50.0, 100.0, 150.0],
 	)
-	monkeypatch.setattr("app.services.agb_stats_service._transform_geometry_to_crs", lambda geometry, _crs: geometry)
 	monkeypatch.setattr("app.services.agb_stats_service._aoi_area_ha", lambda _geometry: 4.0)
 
-	def _mock_tile(*_args, **_kwargs):
-		return AgbTileStats(
-			total_pixels=4,
-			valid_pixels_2025=4,
-			sum_agb_mgha_2025=40.0,
-			sum_agb_sq_mgha2_2025=430.0,
-			min_agb_mgha_2025=5.0,
-			max_agb_mgha_2025=15.0,
-			valid_area_ha_2025=4.0,
-			total_area_ha=4.0,
-			total_agb_mg_2025=40.0,
-			baseline_total_agb_mg=30.0,
-			comparison_total_agb_mg=40.0,
-			agb_increase_mg=10.0,
-			agb_decrease_mg=0.0,
-			agb_increase_area_ha=1.0,
-			agb_decrease_area_ha=0.0,
-			histogram_counts=np.array([0, 1, 2, 1] + [0] * 60, dtype=np.int64),
-			threshold_counts={75.0: 2, 25.0: 4},
+	aoi_mask = np.array([[True, True], [True, True]], dtype=bool)
+	comparison_values = np.array([[5.0, 10.0], [10.0, 15.0]], dtype=np.float64)
+	baseline_values = np.array([[5.0, 7.5], [8.0, 9.5]], dtype=np.float64)
+
+	def _mock_year_loader(*, year, geometry, settings):
+		if year == settings.agb_stats_baseline_year:
+			return AgbCogYearData(
+				year=year,
+				url="baseline.tif",
+				scale_factor=1.0,
+				values=baseline_values,
+				aoi_mask=aoi_mask,
+				valid_mask=aoi_mask,
+			)
+		return AgbCogYearData(
+			year=year,
+			url="comparison.tif",
+			scale_factor=1.0,
+			values=comparison_values,
+			aoi_mask=aoi_mask,
+			valid_mask=aoi_mask,
 		)
 
-	monkeypatch.setattr("app.services.agb_stats_service._process_agb_tile", _mock_tile)
+	monkeypatch.setattr("app.services.agb_stats_service._load_agb_cog_year_data", _mock_year_loader)
 
 	result = compute_agb_stats(
 		geojson_obj=_geojson_feature_collection(),
