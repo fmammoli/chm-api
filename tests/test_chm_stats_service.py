@@ -44,10 +44,13 @@ def test_compute_chm_stats_returns_expected_core_metrics(monkeypatch):
             return {"tile_type": "PNG", "max_zoom": 10}
 
     monkeypatch.setattr("app.services.chm_stats_service._build_pmtiles_reader", lambda _url: DummyReader())
-    monkeypatch.setattr(
-        "app.services.chm_stats_service.mercantile.tiles",
-        lambda *args, **kwargs: [mercantile.Tile(x=1, y=1, z=10)],
-    )
+    def _mock_tiles(_minx, _miny, _maxx, _maxy, zooms, truncate=True):
+        z = list(zooms)[0]
+        if z == 10:
+            return [mercantile.Tile(x=1, y=1, z=10)]
+        return []
+
+    monkeypatch.setattr("app.services.chm_stats_service.mercantile.tiles", _mock_tiles)
     monkeypatch.setattr("app.services.chm_stats_service._transform_geometry_to_crs", lambda geometry, _crs: geometry)
     monkeypatch.setattr("app.services.chm_stats_service._aoi_area_ha", lambda _geometry: 4.0)
 
@@ -90,6 +93,10 @@ def test_compute_chm_stats_returns_expected_core_metrics(monkeypatch):
     assert threshold_metrics[2]["thresholdM"] == 20.0
     assert threshold_metrics[2]["coverRatio"] == 0.25
 
+    range_metrics = result["canopyCoverByRange"]
+    assert [entry["label"] for entry in range_metrics] == ["<5m", "5-10m", "10-20m", ">=20m"]
+    assert [entry["coverRatio"] for entry in range_metrics] == [0.25, 0.25, 0.25, 0.25]
+
 
 def test_compute_chm_stats_uses_custom_thresholds(monkeypatch):
     settings = Settings(chm_stats_default_thresholds_m=[5.0, 10.0, 20.0], chm_stats_histogram_bins=64)
@@ -99,10 +106,13 @@ def test_compute_chm_stats_uses_custom_thresholds(monkeypatch):
             return {"tile_type": "PNG", "max_zoom": 10}
 
     monkeypatch.setattr("app.services.chm_stats_service._build_pmtiles_reader", lambda _url: DummyReader())
-    monkeypatch.setattr(
-        "app.services.chm_stats_service.mercantile.tiles",
-        lambda *args, **kwargs: [mercantile.Tile(x=1, y=1, z=10)],
-    )
+    def _mock_tiles(_minx, _miny, _maxx, _maxy, zooms, truncate=True):
+        z = list(zooms)[0]
+        if z == 10:
+            return [mercantile.Tile(x=1, y=1, z=10)]
+        return []
+
+    monkeypatch.setattr("app.services.chm_stats_service.mercantile.tiles", _mock_tiles)
     monkeypatch.setattr("app.services.chm_stats_service._transform_geometry_to_crs", lambda geometry, _crs: geometry)
     monkeypatch.setattr("app.services.chm_stats_service._aoi_area_ha", lambda _geometry: 4.0)
 
@@ -131,6 +141,10 @@ def test_compute_chm_stats_uses_custom_thresholds(monkeypatch):
 
     threshold_metrics = result["canopyCoverByThreshold"]
     assert [entry["thresholdM"] for entry in threshold_metrics] == [7.0, 12.0]
+
+    range_metrics = result["canopyCoverByRange"]
+    assert [entry["label"] for entry in range_metrics] == ["<7m", "7-12m", ">=12m"]
+    assert [entry["coverRatio"] for entry in range_metrics] == [0.25, 0.5, 0.25]
 
 
 def test_decode_rgb_height_values_red_only_uses_quantized_scale():

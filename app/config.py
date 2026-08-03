@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     agb_stats_max_tiles_per_request: int = Field(default=256, ge=1, le=4096)
 
     # CHM PMTiles source for canopy-height stats.
-    chm_stats_pmtiles_url: str = "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/chm-pmtiles/chm-indonesia.pmtiles"
+    chm_stats_pmtiles_url: str = "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/chm-pmtiles/total_chm.pmtiles"
     chm_stats_pmtiles_zoom: int = Field(default=10, ge=0, le=30)
     chm_stats_tile_fetch_concurrency: int = Field(default=2, ge=1, le=8)
     chm_stats_histogram_bins: int = Field(default=512, ge=64, le=4096)

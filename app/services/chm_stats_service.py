@@ -105,12 +105,14 @@ def compute_chm_stats(
 	logger.info("chm_stats_pipeline step=2_open_pmtiles status=done tile_type=%s", tile_type)
 
 	max_zoom = int(header["max_zoom"])
-	target_zoom = min(settings.chm_stats_pmtiles_zoom, max_zoom)
-	tiles = list(mercantile.tiles(*geometry.bounds, [target_zoom], truncate=True))
+	target_zoom, tiles = _select_stats_zoom_and_tiles(
+		geometry=geometry,
+		requested_zoom=min(settings.chm_stats_pmtiles_zoom, max_zoom),
+		max_zoom=max_zoom,
+		max_tiles=settings.chm_stats_max_tiles_per_request,
+	)
 	if not tiles:
 		raise ServiceValidationError("No PMTiles tiles intersect the AOI")
-	if len(tiles) > settings.chm_stats_max_tiles_per_request:
-		raise ServiceValidationError("AOI intersects too many CHM PMTiles tiles")
 
 	logger.info(
 		"chm_stats_tiles_selected target_zoom=%s tile_count=%s",
@@ -187,6 +189,12 @@ def compute_chm_stats(
 				"coverAreaHa": round(aggregate.valid_area_ha * ratio, 4),
 			}
 		)
+	range_metrics = _build_threshold_range_metrics(
+		thresholds=thresholds,
+		threshold_counts=aggregate.threshold_counts,
+		valid_pixels=aggregate.valid_pixels,
+		valid_area_ha=aggregate.valid_area_ha,
+	)
 
 	logger.info(
 		"chm_stats_pipeline_done valid_pixels=%s total_pixels=%s coverage=%.6f mean=%.4f min=%.4f max=%.4f",
@@ -219,6 +227,7 @@ def compute_chm_stats(
 		"coverageFraction": round(coverage_fraction, 6),
 		"validPixelCount": aggregate.valid_pixels,
 		"canopyCoverByThreshold": threshold_metrics,
+		"canopyCoverByRange": range_metrics,
 		"metadata": {
 			"sourceUrl": settings.chm_stats_pmtiles_url,
 			"sourceFormat": "pmtiles_png",
@@ -228,6 +237,8 @@ def compute_chm_stats(
 			"histogramMinM": settings.chm_stats_histogram_min_m,
 			"histogramMaxM": settings.chm_stats_histogram_max_m,
 			"thresholdsM": ",".join(f"{threshold:g}" for threshold in thresholds),
+			"canopyCoverByThresholdMode": "cumulative_ge",
+			"canopyCoverByRangeMode": "disjoint_ranges",
 		},
 	}
 
@@ -240,6 +251,29 @@ def _resolve_thresholds(custom_thresholds: list[float] | None, settings: Setting
 	if len(unique_sorted) > settings.chm_stats_max_thresholds:
 		raise ServiceValidationError("Too many canopy thresholds requested")
 	return unique_sorted
+
+
+def _select_stats_zoom_and_tiles(
+	*,
+	geometry: BaseGeometry,
+	requested_zoom: int,
+	max_zoom: int,
+	max_tiles: int,
+) -> tuple[int, list[mercantile.Tile]]:
+	best_zoom = requested_zoom
+	best_tiles = list(mercantile.tiles(*geometry.bounds, [requested_zoom], truncate=True))
+	if len(best_tiles) > max_tiles:
+		raise ServiceValidationError("AOI intersects too many CHM PMTiles tiles")
+
+	# Improve statistical fidelity by using the finest zoom that still respects tile limits.
+	for zoom in range(requested_zoom + 1, max_zoom + 1):
+		candidate_tiles = list(mercantile.tiles(*geometry.bounds, [zoom], truncate=True))
+		if len(candidate_tiles) > max_tiles:
+			break
+		best_zoom = zoom
+		best_tiles = candidate_tiles
+
+	return best_zoom, best_tiles
 
 
 def _build_pmtiles_reader(url: str) -> pm_reader.Reader:
@@ -495,3 +529,60 @@ def _hist_quantile(hist_counts: np.ndarray, bin_edges: np.ndarray, quantile: flo
 	fraction = (target - prev) / bin_count
 	fraction = max(0.0, min(float(fraction), 1.0))
 	return left + ((right - left) * fraction)
+
+
+def _build_threshold_range_metrics(
+	*,
+	thresholds: list[float],
+	threshold_counts: dict[float, int],
+	valid_pixels: int,
+	valid_area_ha: float,
+) -> list[dict[str, float | str | None]]:
+	if valid_pixels <= 0:
+		return []
+
+	ranges: list[dict[str, float | str | None]] = []
+	first = thresholds[0]
+	below_first_count = max(0, valid_pixels - int(threshold_counts.get(first, 0)))
+	ranges.append(_range_metric(None, first, below_first_count, valid_pixels, valid_area_ha))
+
+	for idx in range(1, len(thresholds)):
+		lower = thresholds[idx - 1]
+		upper = thresholds[idx]
+		lower_hits = int(threshold_counts.get(lower, 0))
+		upper_hits = int(threshold_counts.get(upper, 0))
+		count = max(0, lower_hits - upper_hits)
+		ranges.append(_range_metric(lower, upper, count, valid_pixels, valid_area_ha))
+
+	last = thresholds[-1]
+	last_count = int(threshold_counts.get(last, 0))
+	ranges.append(_range_metric(last, None, last_count, valid_pixels, valid_area_ha))
+	return ranges
+
+
+def _range_metric(
+	lower: float | None,
+	upper: float | None,
+	count: int,
+	valid_pixels: int,
+	valid_area_ha: float,
+) -> dict[str, float | str | None]:
+	ratio = (count / valid_pixels) if valid_pixels else 0.0
+	return {
+		"lowerBoundM": round(lower, 4) if lower is not None else None,
+		"upperBoundM": round(upper, 4) if upper is not None else None,
+		"label": _range_label(lower, upper),
+		"coverRatio": round(ratio, 6),
+		"coverPercent": round(ratio * 100.0, 4),
+		"coverAreaHa": round(valid_area_ha * ratio, 4),
+	}
+
+
+def _range_label(lower: float | None, upper: float | None) -> str:
+	if lower is None and upper is None:
+		return "all"
+	if lower is None:
+		return f"<{upper:g}m"
+	if upper is None:
+		return f">={lower:g}m"
+	return f"{lower:g}-{upper:g}m"

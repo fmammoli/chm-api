@@ -139,6 +139,15 @@ class ChmThresholdCoverage(BaseModel):
     coverAreaHa: float
 
 
+class ChmRangeCoverage(BaseModel):
+    lowerBoundM: float | None = None
+    upperBoundM: float | None = None
+    label: str
+    coverRatio: float
+    coverPercent: float
+    coverAreaHa: float
+
+
 class ChmStatsResult(BaseModel):
     minCanopyHeightM: float
     maxCanopyHeightM: float
@@ -159,6 +168,7 @@ class ChmStatsResult(BaseModel):
     coverageFraction: float
     validPixelCount: int
     canopyCoverByThreshold: list[ChmThresholdCoverage]
+    canopyCoverByRange: list[ChmRangeCoverage] = Field(default_factory=list)
     metadata: dict[str, Any] | None = None
 
 
