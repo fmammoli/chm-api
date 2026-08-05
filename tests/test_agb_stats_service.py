@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from app.config import Settings
-from app.services.agb_stats_service import AgbCogYearData, compute_agb_stats
+from app.services.agb_stats_service import AgbCogYearData, compute_agb_stats, validate_agb_stats_request_payload
 
 
 def _geojson_feature_collection() -> dict:
@@ -28,6 +28,35 @@ def _geojson_feature_collection() -> dict:
 			}
 		],
 	}
+
+
+def _outside_indonesia_geojson_feature_collection() -> dict:
+	return {
+		"type": "FeatureCollection",
+		"features": [
+			{
+				"type": "Feature",
+				"properties": {},
+				"geometry": {
+					"type": "Polygon",
+					"coordinates": [
+						[
+							[-123.2, 37.6],
+							[-122.9, 37.6],
+							[-122.9, 37.9],
+							[-123.2, 37.9],
+							[-123.2, 37.6],
+						]
+					],
+				},
+			}
+		],
+	}
+
+
+def test_agb_stats_validation_accepts_polygon_outside_indonesia() -> None:
+	settings = Settings()
+	validate_agb_stats_request_payload(_outside_indonesia_geojson_feature_collection(), settings)
 
 
 def test_compute_agb_stats_returns_expected_core_metrics(monkeypatch):

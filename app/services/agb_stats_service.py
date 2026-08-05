@@ -80,7 +80,7 @@ def validate_agb_stats_request_payload(geojson_obj: dict, settings: Settings) ->
 		raise ServiceValidationError("geojson must be an object")
 
 	geom = _extract_geometry(geojson_obj)
-	_validate_geometry(geom, settings)
+	_validate_geometry(geom, settings, enforce_indonesia_only=False)
 	logger.info(
 		"agb_stats_payload_validated payload_bytes=%s geom_type=%s bounds=%s",
 		payload_len,
@@ -98,7 +98,7 @@ def compute_agb_stats(
 ) -> dict[str, float | int | list[dict[str, float]] | dict[str, str | int | float]]:
 	logger.info("agb_stats_pipeline step=1_validate_input status=start")
 	geometry = _extract_geometry(geojson_obj)
-	_validate_geometry(geometry, settings)
+	_validate_geometry(geometry, settings, enforce_indonesia_only=False)
 	logger.info("agb_stats_pipeline step=1_validate_input status=done")
 
 	thresholds = _resolve_thresholds(agb_thresholds_mgha, settings)

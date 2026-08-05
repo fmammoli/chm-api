@@ -1493,7 +1493,7 @@ def _normalize_input_geometry(geojson_obj: dict, source_crs: str, settings: Sett
     if source == "EPSG:3857":
         geom = _transform_geometry_between_crs(geom, source_crs="EPSG:3857", target_crs="EPSG:4326")
 
-    _validate_geometry(geom, settings)
+    _validate_geometry(geom, settings, enforce_indonesia_only=False)
     return geom
 
 
@@ -1521,8 +1521,8 @@ def _normalize_overlay_point_geometry(geojson_obj: dict, source_crs: str, settin
     if geom.is_empty:
         raise ServiceValidationError("Overlay point is empty")
 
-    # Reuse the existing spatial guardrails to keep the point inside the service coverage area.
-    _validate_geometry(geom.buffer(1e-9).envelope, settings)
+    # Reuse shared guardrails (validity, bounds, area/vertex limits) without Indonesia-only clipping.
+    _validate_geometry(geom.buffer(1e-9).envelope, settings, enforce_indonesia_only=False)
     return geom
 
 

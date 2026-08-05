@@ -15,6 +15,7 @@ from app.services.landcover_stats_service import (
     _resolve_forest_classes,
     _valid_mask_from_pmtiles_image,
     compute_landcover_change_stats,
+    validate_landcover_request_payload,
 )
 
 
@@ -40,6 +41,35 @@ def _geojson_feature_collection() -> dict:
             }
         ],
     }
+
+
+def _outside_indonesia_geojson_feature_collection() -> dict:
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [-123.2, 37.6],
+                            [-122.9, 37.6],
+                            [-122.9, 37.9],
+                            [-123.2, 37.9],
+                            [-123.2, 37.6],
+                        ]
+                    ],
+                },
+            }
+        ],
+    }
+
+
+def test_landcover_validation_accepts_polygon_outside_indonesia() -> None:
+    settings = Settings()
+    validate_landcover_request_payload(_outside_indonesia_geojson_feature_collection(), settings)
 
 
 def test_compute_landcover_change_stats_basic_math(monkeypatch):

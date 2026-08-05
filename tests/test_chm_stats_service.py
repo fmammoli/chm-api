@@ -4,7 +4,12 @@ import mercantile
 import numpy as np
 
 from app.config import Settings
-from app.services.chm_stats_service import TileChmStats, _decode_rgb_height_values, compute_chm_stats
+from app.services.chm_stats_service import (
+    TileChmStats,
+    _decode_rgb_height_values,
+    compute_chm_stats,
+    validate_chm_stats_request_payload,
+)
 
 
 def _geojson_feature_collection() -> dict:
@@ -29,6 +34,35 @@ def _geojson_feature_collection() -> dict:
             }
         ],
     }
+
+
+def _outside_indonesia_geojson_feature_collection() -> dict:
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [-123.2, 37.6],
+                            [-122.9, 37.6],
+                            [-122.9, 37.9],
+                            [-123.2, 37.9],
+                            [-123.2, 37.6],
+                        ]
+                    ],
+                },
+            }
+        ],
+    }
+
+
+def test_chm_stats_validation_accepts_polygon_outside_indonesia() -> None:
+    settings = Settings()
+    validate_chm_stats_request_payload(_outside_indonesia_geojson_feature_collection(), settings)
 
 
 def test_compute_chm_stats_returns_expected_core_metrics(monkeypatch):

@@ -85,3 +85,34 @@ def test_accepts_web_mercator_geojson_input() -> None:
 
     validated = validate_threat_map_request_payload(payload, settings)
     assert "options" in validated
+
+
+def test_accepts_polygon_outside_indonesia() -> None:
+    settings = Settings()
+    payload = ThreatMapJobCreateRequest(
+        geojson={
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [-123.2, 37.6],
+                                [-122.9, 37.6],
+                                [-122.9, 37.9],
+                                [-123.2, 37.9],
+                                [-123.2, 37.6],
+                            ]
+                        ],
+                    },
+                    "properties": {},
+                }
+            ],
+        },
+        geojsonCrs="EPSG:4326",
+    )
+
+    validated = validate_threat_map_request_payload(payload, settings)
+    assert "options" in validated

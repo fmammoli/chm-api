@@ -248,7 +248,12 @@ def _validate_indonesia_only(geom: BaseGeometry, settings: Settings) -> None:
         raise ServiceValidationError("it only shows data from indonesia")
 
 
-def _validate_geometry(geom: BaseGeometry, settings: Settings) -> None:
+def _validate_geometry(
+    geom: BaseGeometry,
+    settings: Settings,
+    *,
+    enforce_indonesia_only: bool = True,
+) -> None:
     if geom.geom_type not in {"Polygon", "MultiPolygon"}:
         raise ServiceValidationError("GeoJSON must be a Polygon or MultiPolygon")
     if not geom.is_valid:
@@ -268,7 +273,8 @@ def _validate_geometry(geom: BaseGeometry, settings: Settings) -> None:
     if area_km2 > settings.max_aoi_area_km2:
         raise ServiceValidationError("AOI is too large")
 
-    _validate_indonesia_only(geom, settings)
+    if enforce_indonesia_only:
+        _validate_indonesia_only(geom, settings)
 
 
 def _load_tiles_index(settings: Settings) -> gpd.GeoDataFrame:

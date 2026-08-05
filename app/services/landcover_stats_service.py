@@ -96,7 +96,7 @@ def validate_landcover_request_payload(geojson_obj: dict, settings: Settings) ->
         raise ServiceValidationError("geojson must be an object")
 
     geom = _extract_geometry(geojson_obj)
-    _validate_geometry(geom, settings)
+    _validate_geometry(geom, settings, enforce_indonesia_only=False)
     logger.info(
         "landcover_payload_validated payload_bytes=%s geom_type=%s bounds=%s",
         payload_len,
@@ -123,7 +123,7 @@ def compute_landcover_change_stats(
         comparison_year,
     )
     geometry = _extract_geometry(geojson_obj)
-    _validate_geometry(geometry, settings)
+    _validate_geometry(geometry, settings, enforce_indonesia_only=False)
     logger.info(
         "landcover_stats_start baseline_year=%s comparison_year=%s geom_type=%s bounds=%s",
         baseline_year,
