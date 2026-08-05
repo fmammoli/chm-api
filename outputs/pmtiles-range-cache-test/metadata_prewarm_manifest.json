@@ -7,7 +7,7 @@
   "targets": [
     {
       "year": 1990,
-      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/1990_landcover.pmtiles",
+      "url": "https://www.bc-webgis.com/landcover-mapbiomas-pmtiles/1990_landcover.pmtiles",
       "urlHash": "ae054d2c4c502ea4",
       "pmtiles": {
         "minZoom": 0,
@@ -60,7 +60,7 @@
     },
     {
       "year": 1991,
-      "url": "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/1991_landcover.pmtiles",
+      "url": "https://www.bc-webgis.com/landcover-mapbiomas-pmtiles/1991_landcover.pmtiles",
       "urlHash": "dac62627394c3d7e",
       "pmtiles": {
         "minZoom": 0,

@@ -193,6 +193,12 @@ def test_pmtiles_metadata_includes_configured_forest_classes(monkeypatch):
     assert metadata["forestColors"]
 
 
+def test_landcover_pmtiles_default_base_url_uses_custom_domain():
+    settings = Settings()
+
+    assert settings.landcover_base_url == "https://www.bc-webgis.com/landcover-mapbiomas-pmtiles-values"
+
+
 def test_pmtiles_class_encoded_rgb_uses_class_channel_for_forest_mask_and_validity():
     image = np.array(
         [

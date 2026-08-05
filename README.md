@@ -197,16 +197,25 @@ The response is JSON-only and includes computed numeric values for forest loss/g
 
 Landcover source configuration notes:
 
-- `LANDCOVER_BASE_URL` currently defaults to `https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles-values`
+- `LANDCOVER_BASE_URL` currently defaults to `https://www.bc-webgis.com/landcover-mapbiomas-pmtiles-values`
 - `LANDCOVER_URL_TEMPLATE` defaults to PMTiles yearly files: `{base_url}/{year}_landcover.pmtiles`
 - If per-year paths are irregular, use `LANDCOVER_YEAR_1990_URL` and `LANDCOVER_YEAR_2024_URL`
 - PMTiles PNG mode computes stats by rasterizing AOI over tiles and applying forest legend colors from `LANDCOVER_FOREST_COLORS`
 - `LANDCOVER_FOREST_COLORS` should include only true forest legend colors (for example `1f8d49`); if palm oil classes are purple in your legend, do not include that purple value in forest colors
 - Optional raster fallback remains supported if `LANDCOVER_URL_TEMPLATE` points to GeoTIFF/COG assets
 
+AGB source configuration notes:
+
+- `AGB_STATS_BASE_URL` currently defaults to `https://www.bc-webgis.com/agb-ctrees-pmtiles-values`
+- `AGB_STATS_URL_TEMPLATE` defaults to PMTiles yearly files: `{base_url}/{year}_agb-ctrees.pmtiles`
+
+CHM source configuration notes:
+
+- `CHM_STATS_PMTILES_URL` currently defaults to `https://www.bc-webgis.com/chm-pmtiles/total_chm.pmtiles`
+
 Threat-map frame source configuration notes:
 
-- `THREAT_MAP_LANDCOVER_BASE_URL` defaults to `https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles`
+- `THREAT_MAP_LANDCOVER_BASE_URL` defaults to `https://www.bc-webgis.com/landcover-mapbiomas-pmtiles`
 - `THREAT_MAP_LANDCOVER_URL_TEMPLATE` defaults to `{base_url}/{year}_landcover.pmtiles`
 - Threat-map frames now preserve PMTiles pixel colors directly (no class-to-color remapping in frame rendering)
 

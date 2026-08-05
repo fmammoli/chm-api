@@ -163,8 +163,14 @@ def test_resolve_threat_map_year_url_uses_threat_map_bucket_defaults():
 
     assert (
         resolved
-        == "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles/1990_landcover.pmtiles"
+        == "https://www.bc-webgis.com/landcover-mapbiomas-pmtiles/1990_landcover.pmtiles"
     )
+
+
+def test_threat_map_pmtiles_default_base_url_uses_custom_domain():
+    settings = Settings()
+
+    assert settings.threat_map_landcover_base_url == "https://www.bc-webgis.com/landcover-mapbiomas-pmtiles"
 
 
 def test_load_legend_entries_from_mapbiomas_colors_path_reads_palette(tmp_path: Path):

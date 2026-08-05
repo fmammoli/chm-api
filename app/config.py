@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     ctrees_agb_s3_prefix: str = "cogs/"
 
     # MapBiomas landcover source for annual stats.
-    landcover_base_url: str = "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles-values"
+    landcover_base_url: str = "https://www.bc-webgis.com/landcover-mapbiomas-pmtiles-values"
     landcover_url_template: str = "{base_url}/{year}_landcover.pmtiles"
     landcover_year_1990_url: str = ""
     landcover_year_2024_url: str = ""
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     landcover_pmtiles_zoom: int = Field(default=12, ge=0, le=30)
 
     # CTrees AGB PMTiles source for annual stats.
-    agb_stats_base_url: str = "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/agb-ctrees-pmtiles-values"
+    agb_stats_base_url: str = "https://www.bc-webgis.com/agb-ctrees-pmtiles-values"
     agb_stats_url_template: str = "{base_url}/{year}_agb-ctrees.pmtiles"
     agb_stats_baseline_year: int = Field(default=2000, ge=2000, le=2025)
     agb_stats_comparison_year: int = Field(default=2025, ge=2000, le=2025)
@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     agb_stats_max_tiles_per_request: int = Field(default=256, ge=1, le=4096)
 
     # CHM PMTiles source for canopy-height stats.
-    chm_stats_pmtiles_url: str = "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/chm-pmtiles/total_chm.pmtiles"
+    chm_stats_pmtiles_url: str = "https://www.bc-webgis.com/chm-pmtiles/total_chm.pmtiles"
     chm_stats_pmtiles_zoom: int = Field(default=10, ge=0, le=30)
     chm_stats_tile_fetch_concurrency: int = Field(default=2, ge=1, le=8)
     chm_stats_histogram_bins: int = Field(default=512, ge=64, le=4096)
@@ -101,7 +101,7 @@ class Settings(BaseSettings):
     threat_map_low_resource_max_size: int = Field(default=512, ge=256, le=1024)
     threat_map_low_resource_fps: float = Field(default=0.5, gt=0.05, le=2.0)
     threat_map_low_resource_frame_duration_seconds: float = Field(default=1.5, gt=0.25, le=5.0)
-    threat_map_landcover_base_url: str = "https://pub-b35b693f4e7a4112af656d6983f8adc2.r2.dev/landcover-mapbiomas-pmtiles"
+    threat_map_landcover_base_url: str = "https://www.bc-webgis.com/landcover-mapbiomas-pmtiles"
     threat_map_landcover_url_template: str = "{base_url}/{year}_landcover.pmtiles"
     threat_map_landcover_year_1990_url: str = ""
     threat_map_landcover_year_2024_url: str = ""
